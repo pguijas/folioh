@@ -1,7 +1,7 @@
 {
   "foliohVersion": "0.3.3",
   "mdxContractVersion": "1.1",
-  "generatedAt": "2026-10-09T17:17:21Z",
+  "generatedAt": "2026-10-15T06:44:03Z",
   "instructions": "Ignore fields you do not recognise; later Folioh releases add them. mdxContractVersion versions the components list only.",
   "components": [
     {
