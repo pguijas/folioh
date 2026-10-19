@@ -1,0 +1,15 @@
+/* The product selector needs room beside the original Folio identity.
+   The hero keeps guide and source links available on narrow screens. */
+@media (width < 40rem) {
+  .folio-product-site .landing-navbar > div {
+    padding-inline: 1rem;
+  }
+
+  .folio-product-site .landing-navbar > div > div {
+    gap: 0.5rem;
+  }
+
+  .folio-product-site .landing-navbar nav > a {
+    display: none;
+  }
+}

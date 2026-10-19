@@ -282,6 +282,10 @@ fn branch_preview_workflow_keeps_the_three_job_shape() {
         build_docs["env"]["FOLIOH_BASE_PATH"],
         Value::from("${{ steps.preview.outputs.base_path }}")
     );
+    assert_eq!(
+        build_docs["env"]["FOLIOH_PREVIEW_URL"],
+        Value::from("${{ steps.preview.outputs.url }}")
+    );
     assert_eq!(build_docs["run"], Value::from("folioh build --clean"));
     assert_eq!(
         step(build, "Upload preview artifact")["with"]["if-no-files-found"],

@@ -45,6 +45,7 @@ fn minimal_config_takes_every_default() {
     );
     assert!(config.sidebar.default_collapsed);
     assert!(config.search.enabled);
+    assert!(!config.feedback.enabled);
     assert_eq!(config.search.placeholder, "");
     assert_eq!(
         config.deploy,
@@ -62,6 +63,27 @@ fn minimal_config_takes_every_default() {
 }
 
 #[test]
+fn feedback_requires_an_explicit_boolean_opt_in() {
+    for (section, enabled) in [
+        ("", false),
+        ("feedback: {}\n", false),
+        ("feedback:\n  enabled: false\n", false),
+        ("feedback:\n  enabled: true\n", true),
+    ] {
+        let yaml = format!("project:\n  name: T\n  repo: https://github.com/acme/docs\n{section}");
+        let (config, warnings) = parse_yaml(&yaml).unwrap();
+        assert_eq!(config.feedback.enabled, enabled, "{yaml}");
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+    for value in ["null", "\"true\"", "1", "[]"] {
+        assert_eq!(
+            parse_err(&format!("feedback:\n  enabled: {value}\n")),
+            "feedback.enabled must be a boolean"
+        );
+    }
+}
+
+#[test]
 fn empty_document_is_an_untitled_project() {
     let (config, warnings) = parse_yaml("").unwrap();
     assert_eq!(config.project.name, "Untitled");
@@ -73,7 +95,7 @@ fn empty_document_is_an_untitled_project() {
 
 #[test]
 fn core_sections_must_be_mappings() {
-    for section in ["project", "source", "theme", "llm"] {
+    for section in ["project", "source", "theme", "llm", "feedback"] {
         let yaml = format!("{section}: not-a-mapping\n");
         assert_eq!(parse_err(&yaml), format!("{section} must be a mapping"));
         // A bare `key:` line is an explicit null, not a missing section.
@@ -586,6 +608,7 @@ fn serialized_shape_follows_struct_order_and_omits_unset_header_keys() {
             "sidebar",
             "llm",
             "search",
+            "feedback",
             "deploy",
             "components",
             "i18n",

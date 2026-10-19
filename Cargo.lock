@@ -571,7 +571,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-cli"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "anstream",
  "anstyle",
@@ -600,7 +600,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-config"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "indexmap",
  "jiff",
@@ -613,7 +613,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-docs"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "folioh-config",
  "folioh-ir",
@@ -630,7 +630,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-ir"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "regex",
  "serde",
@@ -640,7 +640,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-lang-javascript"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "folioh-ir",
  "serde_json",
@@ -652,7 +652,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-lang-python"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "criterion",
  "folioh-ir",
@@ -668,7 +668,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-lang-rust"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "folioh-ir",
  "proc-macro2",
@@ -681,7 +681,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-mdx"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "indexmap",
  "regex",
@@ -694,7 +694,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-plugins"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "folioh-config",
  "folioh-mdx",
@@ -709,7 +709,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-site"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "flate2",
  "folioh-config",
@@ -727,7 +727,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-watch"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "folioh-config",
  "notify",

@@ -1,5 +1,7 @@
 "use client";
 
+import "./product-navigation.css";
+
 import { normalizeLandingHref } from "@/components/landing/actions";
 import {
   BuildPipelineLandingHero,
@@ -7,6 +9,7 @@ import {
   HeartbeatLandingHero,
   SourcePipelineLandingHero,
 } from "@/components/landing/hero";
+import { FolioProductSwitcher } from "@/components/folio-product-switcher";
 import { LandingNavbar } from "@/components/landing-navbar";
 import {
   LandingSectionRenderer,
@@ -124,8 +127,11 @@ const LandingHero =
 
 export default function FoliohDocsHome() {
   return (
-    <div className="landing-shell flex min-h-screen flex-col overflow-hidden">
-      <LandingNavbar pathToRoot={pathToRoot} />
+    <div className="folio-product-site landing-shell flex min-h-screen flex-col overflow-hidden">
+      <LandingNavbar
+        pathToRoot={pathToRoot}
+        productSwitcher={<FolioProductSwitcher homeHref={`${pathToRoot}/`} />}
+      />
 
       <main id="main-content" className="flex-1">
         <LandingHero

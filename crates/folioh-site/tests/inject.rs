@@ -83,7 +83,37 @@ fn root_docs_and_previews_layouts_take_project_identity_and_repo() {
             && docs.contains("aria-label=\"GitHub repository\"")
     );
     assert!(!docs.contains("__PROJECT_REPO"));
-    assert!(docs.contains("docsRepositoryBase={\"https://github.com/org/mylib\"}\n            editLink={null}\n            footer={<Footer />}"));
+    assert!(docs.contains("docsRepositoryBase={\"https://github.com/org/mylib\"}\n            editLink={null}\n            feedback={{ content: null }}\n            footer={<Footer />}"));
+}
+
+#[test]
+fn feedback_is_opt_in_even_when_the_project_has_a_repository() {
+    let dir = tempfile::tempdir().unwrap();
+    let template = common::make_template(dir.path());
+    for (label, yaml, enabled) in [
+        ("default", "project:\n  name: T\n  repo: https://github.com/acme/docs\n", false),
+        ("disabled", "project:\n  name: T\n  repo: https://github.com/acme/docs\nfeedback:\n  enabled: false\n", false),
+        ("enabled", "project:\n  name: T\n  repo: https://github.com/acme/docs\nfeedback:\n  enabled: true\n", true),
+        ("no-repo", "feedback:\n  enabled: true\n", false),
+    ] {
+        let config = common::config(dir.path(), yaml);
+        let build = common::prepared(dir.path(), &config, &template, label);
+        let docs = read(&build, "app/docs/layout.tsx");
+        let expected = if enabled {
+            "feedback={{ content: \"Feedback\", labels: \"feedback\" }}"
+        } else {
+            "feedback={{ content: null }}"
+        };
+        assert!(docs.contains(expected), "{label}: {docs}");
+    }
+    let config = common::config(dir.path(), "");
+    let build = common::prepared(
+        dir.path(),
+        &config,
+        &common::bundled_template(),
+        "bundled-preview-index",
+    );
+    assert!(read(&build, "app/previews/layout.tsx").contains("feedback={{ content: null }}"));
 }
 
 #[test]
@@ -1214,4 +1244,31 @@ fn theme_logo_replaces_the_landing_monogram_and_shows_once_in_the_docs_navbar() 
         "{navbar}"
     );
     assert!(!read(&build, "app/docs/layout.tsx").contains("<img "));
+}
+
+#[test]
+fn the_extra_preset_catalog_is_explicitly_enabled() {
+    let dir = tempfile::tempdir().unwrap();
+    let template = common::make_template(dir.path());
+    common::write(
+        &template,
+        "theme/preset-catalog.ts",
+        "export const extraPresetsEnabled: boolean = false // __FOLIOH_EXTRA_PRESETS__\n",
+    );
+    for enabled in [false, true] {
+        let config = common::config(
+            dir.path(),
+            &format!("theme: {{extra_presets: {enabled}}}\n"),
+        );
+        let build = common::prepared(
+            dir.path(),
+            &config,
+            &template,
+            &format!("catalog-{enabled}"),
+        );
+        assert_eq!(
+            read(&build, "theme/preset-catalog.ts"),
+            format!("export const extraPresetsEnabled: boolean = {enabled}\n")
+        );
+    }
 }

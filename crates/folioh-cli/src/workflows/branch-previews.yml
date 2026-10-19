@@ -127,6 +127,7 @@ jobs:
         working-directory: preview-source
         env:
           FOLIOH_BASE_PATH: ${{ steps.preview.outputs.base_path }}
+          FOLIOH_PREVIEW_URL: ${{ steps.preview.outputs.url }}
         run: folioh build --clean
 
       - name: Upload preview artifact

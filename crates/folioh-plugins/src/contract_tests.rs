@@ -194,7 +194,8 @@ fn rendered_authoring_contract_is_json_with_a_trailing_newline_and_utf8() {
     expected.sort_unstable();
     assert!(!expected.contains(&"plugins"));
     assert!(!expected.contains(&"i18n") && !expected.contains(&"versions"));
-    assert_eq!(expected.len(), 15);
+    assert_eq!(expected.len(), 16);
+    assert!(expected.contains(&"feedback"));
     assert!(folioh_config::known_config_keys().contains(&"plugins"));
     assert_eq!(
         parsed["configKeys"]

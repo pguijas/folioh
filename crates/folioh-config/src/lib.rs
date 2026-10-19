@@ -18,8 +18,8 @@ mod value;
 pub use components::{ComponentSpec, ComponentsConfig};
 pub use docs::{
     load_docs_config, load_docs_config_in, load_docs_config_with_keys, parse_docs_config,
-    parse_docs_config_with, DeployConfig, DocsConfig, I18nConfig, LlmConfig, ProjectConfig,
-    SearchConfig, SidebarConfig,
+    parse_docs_config_with, DeployConfig, DocsConfig, FeedbackConfig, I18nConfig, LlmConfig,
+    ProjectConfig, SearchConfig, SidebarConfig,
 };
 pub use error::{ConfigError, Loaded};
 pub use features::{
@@ -42,7 +42,7 @@ pub use theme::{
 pub use trace::Tracer;
 
 /// The core `docs.yaml` keys, in the order `/_folioh/contract.json` publishes them.
-pub const CORE_CONFIG_KEYS: [&str; 15] = [
+pub const CORE_CONFIG_KEYS: [&str; 16] = [
     "project",
     "source",
     "output",
@@ -55,6 +55,7 @@ pub const CORE_CONFIG_KEYS: [&str; 15] = [
     "components",
     "i18n",
     "search",
+    "feedback",
     "versions",
     "deploy",
     "template",

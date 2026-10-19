@@ -1,6 +1,6 @@
 project:
   name: "Folioh"
-  version: "0.3.3"
+  version: "0.3.4"
   repo: "https://github.com/pguijas/folioh"
   url: "https://folioh.site"
 
@@ -10,7 +10,12 @@ source:
 
 output: "_site"
 
+feedback:
+  enabled: true
+
 theme:
+  preset: "pastel"
+  extra_presets: false
   dark_mode: true
   package: "theme/folioh-site"
 
@@ -152,7 +157,7 @@ roadmap:
   projects:
     docs:
       label: "Folioh Docs"
-      description: "Source analysis, theming, one binary, agent readiness, every language, then the open platform at 1.0. Everything that turns a repository into a published site."
+      description: "The path to Folioh 1.0."
   phases:
     - id: "foundation"
       project: "docs"
@@ -211,6 +216,7 @@ roadmap:
         - "A typed export of the whole site for tools and agents"
         - "Per-page structured data and content signals for search engines and AI crawlers"
         - "Your agent moves documentation from any tool to Folioh with a migration skill and a few scripts"
+        - "Every theme polished across documentation, components, and mobile"
     - id: "every-language"
       project: "docs"
       version: "0.5"

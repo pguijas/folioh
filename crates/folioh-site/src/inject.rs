@@ -276,6 +276,7 @@ impl<'a> TemplateConfigInjector<'a> {
         self.inject_search_postbuild()?;
         self.inject_theme_config()?;
         self.inject_dark_mode()?;
+        self.inject_preset_catalog()?;
         self.inject_next_config()?;
         self.inject_versions()?;
         self.write_template_context()?;
@@ -670,8 +671,8 @@ impl<'a> TemplateConfigInjector<'a> {
                 &format!("getPageMap({})", json::string(&self.base())),
             );
         content = self.inject_repo_link(&content);
-        // Nextra's defaults point the edit and feedback links at Nextra's own
-        // repository; without a project repo neither link is shown.
+        // Never inherit Nextra's feedback defaults: a repository alone does
+        // not enable feedback, and an opt-in without a repository has no target.
         let repo = &self.config.project.repo;
         let repo_props = if repo.is_empty() {
             "editLink={null}\n            feedback={{ content: null }}".to_string()
@@ -680,6 +681,16 @@ impl<'a> TemplateConfigInjector<'a> {
                 "docsRepositoryBase={{{}}}\n            editLink={{null}}",
                 json::string(repo)
             )
+        };
+        let repo_props = if !repo.is_empty() {
+            let feedback = if self.config.feedback.enabled {
+                "feedback={{ content: \"Feedback\", labels: \"feedback\" }}"
+            } else {
+                "feedback={{ content: null }}"
+            };
+            format!("{repo_props}\n            {feedback}")
+        } else {
+            repo_props
         };
         content = content.replace(
             "footer={<Footer />}",
@@ -1065,6 +1076,21 @@ impl<'a> TemplateConfigInjector<'a> {
                 "const configuredDefaultPresetId = \"pastel\" // __FOLIOH_THEME_PRESET__",
                 &replacement,
             );
+        self.write(&path, &content)
+    }
+
+    fn inject_preset_catalog(&mut self) -> Result<()> {
+        let path = self.build_dir.join("theme/preset-catalog.ts");
+        if !path.exists() {
+            return Ok(());
+        }
+        let content = self.read(&path)?.replace(
+            "export const extraPresetsEnabled: boolean = false // __FOLIOH_EXTRA_PRESETS__",
+            &format!(
+                "export const extraPresetsEnabled: boolean = {}",
+                self.config.theme.extra_presets
+            ),
+        );
         self.write(&path, &content)
     }
 

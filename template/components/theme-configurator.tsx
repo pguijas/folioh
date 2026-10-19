@@ -4,6 +4,7 @@ import { useLayoutEffect } from "react"
 import { THEME_SCHEME_EVENT } from "@/components/theme-provider"
 import { projectThemeDefaultConfig } from "@/theme/project-theme"
 import { presets } from "@/theme/presets"
+import { selectablePresets } from "@/theme/preset-catalog"
 import { themeRadiusScale } from "@/theme/theme-contract.generated"
 import {
   type PresetOptionValues,
@@ -490,6 +491,7 @@ const packageDefaults: {
 } = projectThemeDefaultConfig
 const configuredDefaultPresetId = "pastel" // __FOLIOH_THEME_PRESET__
 const DEFAULT_PRESET = presets.find((preset) => preset.id === (packageDefaults.presetId ?? configuredDefaultPresetId)) ?? presets[0]!
+export const SELECTABLE_PRESETS = selectablePresets(DEFAULT_PRESET.id)
 const DEFAULT_CUSTOMIZATION: ThemeCustomization = {
   fontId: "sans",
   colorId: "ink",
@@ -783,18 +785,23 @@ function normalizeConfig(input: LegacyThemeConfig = {}): ThemeConfig {
   }
 }
 
+function readableConfig(input: LegacyThemeConfig): ThemeConfig {
+  const config = normalizeConfig(input)
+  return SELECTABLE_PRESETS.some((preset) => preset.id === config.presetId) ? config : DEFAULT_CONFIG
+}
+
 function loadConfig(): ThemeConfig {
   if (typeof window === "undefined") return DEFAULT_CONFIG
 
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
-      return normalizeConfig(JSON.parse(stored))
+      return readableConfig(JSON.parse(stored))
     }
     const previous = PREVIOUS_STORAGE_KEY && localStorage.getItem(PREVIOUS_STORAGE_KEY)
     const legacy = previous || localStorage.getItem(LEGACY_STORAGE_KEY)
     if (legacy) {
-      const migrated = normalizeConfig(JSON.parse(legacy))
+      const migrated = readableConfig(JSON.parse(legacy))
       localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated))
       if (!previous) localStorage.removeItem(LEGACY_STORAGE_KEY)
       return migrated
@@ -922,7 +929,7 @@ let themeUpdate = 0
 
 export function saveThemeConfig(config: ThemeConfig) {
   const previous = readThemeConfig()
-  const next = normalizeConfig(config)
+  const next = readableConfig(config)
   const update = ++themeUpdate
   themeTransition?.skipTransition()
   document.documentElement.classList.remove("folioh-theme-transition")
@@ -964,7 +971,7 @@ export function previewThemeConfig(config: ThemeConfig) {
   ++themeUpdate
   themeTransition?.skipTransition()
   document.documentElement.classList.remove("folioh-theme-transition")
-  applyConfig(config)
+  applyConfig(readableConfig(config))
 }
 
 // The config a reader gets by picking a preset with the given options, or with
@@ -1039,7 +1046,7 @@ export function configVars(config: ThemeConfig, dark: boolean): Record<string, s
 // Combination-capped bootstrap payload; buildBootstrapPresets (preset-types.ts)
 // embeds only the default resolution for presets whose option-combination
 // count exceeds MAX_BOOTSTRAP_COMBINATIONS so the inline script stays small.
-const BOOTSTRAP_PRESETS = buildBootstrapPresets(presets)
+const BOOTSTRAP_PRESETS = buildBootstrapPresets(SELECTABLE_PRESETS)
 
 const BOOTSTRAP_FONT_OPTIONS = fontOptions.map((option) => ({
   id: option.id,
@@ -1204,17 +1211,21 @@ const THEME_BOOTSTRAP_SCRIPT = `
         colorOverrides: normalizeColorOverrides(raw.colorOverrides),
       };
     };
+    const readableConfig = (raw) => {
+      const id = normalizePresetId(getRequestedPresetId(raw));
+      return presets.some((preset) => preset.id === id) ? normalizeConfig(raw) : normalizeConfig(defaultConfig);
+    };
     const readConfig = () => {
       try {
         const stored = localStorage.getItem("${STORAGE_KEY}");
         if (stored) {
-          return normalizeConfig(JSON.parse(stored));
+          return readableConfig(JSON.parse(stored));
         }
         const previousKey = ${JSON.stringify(PREVIOUS_STORAGE_KEY ?? null)};
         const previous = previousKey && localStorage.getItem(previousKey);
         const legacy = previous || localStorage.getItem("${LEGACY_STORAGE_KEY}");
         if (legacy) {
-          const migrated = normalizeConfig(JSON.parse(legacy));
+          const migrated = readableConfig(JSON.parse(legacy));
           localStorage.setItem("${STORAGE_KEY}", JSON.stringify(migrated));
           if (!previous) localStorage.removeItem("${LEGACY_STORAGE_KEY}");
           return migrated;

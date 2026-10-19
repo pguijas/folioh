@@ -31,6 +31,7 @@ pub struct DocsConfig {
     pub sidebar: SidebarConfig,
     pub llm: LlmConfig,
     pub search: SearchConfig,
+    pub feedback: FeedbackConfig,
     pub deploy: DeployConfig,
     pub components: ComponentsConfig,
     /// Empty unless `FOLIOH_EXPERIMENTAL` names `i18n`.
@@ -75,6 +76,12 @@ pub struct LlmConfig {
 pub struct SearchConfig {
     pub enabled: bool,
     pub placeholder: String,
+}
+
+/// `feedback:` is opt-in, independently of the repository link.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
+pub struct FeedbackConfig {
+    pub enabled: bool,
 }
 
 /// `deploy:`.
@@ -238,6 +245,8 @@ fn parse_docs_config_with_keys(
     let source = core_mapping(raw, "source")?;
     let theme = core_mapping(raw, "theme")?;
     let llm = core_mapping(raw, "llm")?;
+    let feedback = core_mapping(raw, "feedback")?;
+    warn_unknown_keys(&feedback, &["enabled"], "feedback", warnings);
     warn_unknown_keys(&project, &PROJECT_KEYS, "project", warnings);
     warn_unknown_keys(&llm, &LLM_KEYS, "llm", warnings);
     for (key, allowed) in [
@@ -316,6 +325,9 @@ fn parse_docs_config_with_keys(
             placeholder: String::new(),
         },
     };
+    let feedback = FeedbackConfig {
+        enabled: bool_field(&feedback, "enabled", "feedback.enabled", false)?,
+    };
     let i18n = match lenient_mapping(raw, "i18n")
         .filter(|_| is_feature_enabled_in("i18n", experimental))
     {
@@ -342,6 +354,7 @@ fn parse_docs_config_with_keys(
         sidebar,
         llm,
         search,
+        feedback,
         deploy,
         components,
         i18n,

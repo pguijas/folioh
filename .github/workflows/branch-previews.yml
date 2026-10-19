@@ -10,7 +10,10 @@ permissions:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{ github.event.repository.private &&
+          (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) &&
+          fromJSON('["self-hosted", "nas"]') || 'ubuntu-latest' }}
     permissions:
       contents: read
       pull-requests: read
@@ -76,7 +79,10 @@ jobs:
   build-preview:
     needs: validate
     if: needs.validate.outputs.enabled == 'true'
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{ github.event.repository.private &&
+          (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) &&
+          fromJSON('["self-hosted", "nas"]') || 'ubuntu-latest' }}
     permissions:
       contents: read
       pages: read
@@ -138,6 +144,7 @@ jobs:
         working-directory: preview-source
         env:
           FOLIOH_BASE_PATH: ${{ steps.preview.outputs.base_path }}
+          FOLIOH_PREVIEW_URL: ${{ steps.preview.outputs.url }}
         run: folioh build --clean
 
       - name: Upload preview artifact
@@ -150,7 +157,10 @@ jobs:
   deploy:
     needs: ["validate", "build-preview"]
     if: needs.validate.outputs.enabled == 'true'
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{ github.event.repository.private &&
+          (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) &&
+          fromJSON('["self-hosted", "nas"]') || 'ubuntu-latest' }}
     concurrency:
       group: "pages"
       cancel-in-progress: false

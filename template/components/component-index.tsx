@@ -1,4 +1,5 @@
-import type { CSSProperties } from "react"
+import { ComponentGalleryPreview } from "./component-gallery-preview"
+import { ComponentIndexPreview } from "./component-index-previews"
 
 type ComponentEntry = {
   title: string
@@ -307,96 +308,54 @@ const componentGroups: ComponentGroup[] = [
   },
 ]
 
-const fastPaths = [
-  {
-    task: "Write a setup guide",
-    components: ["TerminalSession", "Steps", "Checklist"],
-  },
-  {
-    task: "Explain generated output",
-    components: ["FileTree", "BuildArtifact", "ConfigPanel"],
-  },
-  {
-    task: "Document Python APIs",
-    components: ["ClassOverview", "ParamTable", "TypeBadge"],
-  },
-]
-
-const componentCount = componentGroups.reduce(
-  (total, group) => total + group.entries.length,
-  0
-)
-
-function groupStyle(accent: string) {
-  return { "--folioh-component-group-accent": accent } as CSSProperties
+function groupId(title: string) {
+  return title.toLowerCase().replace(" components", "").replaceAll(" ", "-")
 }
 
 export function ComponentIndex() {
   return (
-    <div className="component-index">
-      <section className="component-index-hero" aria-labelledby="component-index-title">
-        <div className="component-index-hero-copy">
-          <p className="component-index-kicker">Component catalog</p>
-          <h2 id="component-index-title">
-            Pick the right primitive before writing another docs section.
-          </h2>
-          <p>
-            Folioh ships {componentCount} documentation components across{" "}
-            {componentGroups.length} families. Use this page as a routing layer:
-            find the job, open the component, then copy the pattern into a real
-            guide or generated API page.
-          </p>
-        </div>
-        <div className="component-index-panel" aria-label="Catalog summary">
-          <span>{componentCount} entries</span>
-          <span>{componentGroups.length} families</span>
-          <span>MDX ready</span>
-        </div>
-      </section>
-
-      <section className="component-index-fast-paths" aria-labelledby="fast-path-title">
-        <div>
-          <p className="component-index-kicker">Fast paths</p>
-          <h3 id="fast-path-title">Start from the shape of the page.</h3>
-        </div>
-        <div className="component-index-path-list">
-          {fastPaths.map((path) => (
-            <div className="component-index-path" key={path.task}>
-              <span>{path.task}</span>
-              <p>{path.components.join(" + ")}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <div className="component-index-groups">
+    <div className="component-gallery not-prose">
+      <nav className="component-gallery-nav" aria-label="Component families">
         {componentGroups.map((group) => (
-          <section
-            className="component-index-group"
-            key={group.title}
-            style={groupStyle(group.accent)}
-            aria-labelledby={`${group.title.replaceAll(" ", "-")}-title`}
-          >
-            <div className="component-index-group-heading">
-              <span className="component-index-swatch" aria-hidden="true" />
-              <h3 id={`${group.title.replaceAll(" ", "-")}-title`}>
-                {group.title}
-              </h3>
-              <p>{group.summary}</p>
-            </div>
-            <div className="component-index-links">
-              {group.entries.map((entry) => (
-                <a className="component-index-link" href={entry.href} key={entry.href}>
-                  <span className="component-index-link-meta">{entry.role}</span>
-                  <strong>{entry.title}</strong>
-                  <span>{entry.description}</span>
-                  <em>Open</em>
-                </a>
-              ))}
-            </div>
-          </section>
+          <a key={group.title} href={`#${groupId(group.title)}`}>
+            {group.title.replace(" Components", "")}
+          </a>
         ))}
-      </div>
+      </nav>
+      {componentGroups.map((group) => (
+        <section
+          className="component-gallery-family"
+          key={group.title}
+          aria-labelledby={groupId(group.title)}
+        >
+          <h2 id={groupId(group.title)}>
+            {group.title.replace(" Components", "")}
+          </h2>
+          <div className="component-gallery-grid">
+            {group.entries.map((entry) => (
+              <article className="component-gallery-card" key={entry.href}>
+                <ComponentGalleryPreview
+                  title={entry.title}
+                  compact={
+                    group.title === "Theme Components" ||
+                    ["Kbd", "Term", "TypeBadge"].includes(entry.title)
+                  }
+                >
+                  {group.title === "Theme Components" ? (
+                    <span>Available in the site header</span>
+                  ) : (
+                    <ComponentIndexPreview title={entry.title} />
+                  )}
+                </ComponentGalleryPreview>
+                <a className="component-gallery-link" href={entry.href}>
+                  {entry.title}
+                  <span aria-hidden="true">↗</span>
+                </a>
+              </article>
+            ))}
+          </div>
+        </section>
+      ))}
     </div>
   )
 }

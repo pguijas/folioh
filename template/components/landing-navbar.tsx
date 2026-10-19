@@ -114,7 +114,7 @@ export function LandingNavbar({
               href={`${pathToRoot}/docs/`}
               className="px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
-              Documentation
+              Docs
             </a>
           ) : null}
           {!minimal && normalizedSecondaryCtaLink ? (

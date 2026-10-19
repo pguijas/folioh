@@ -10,9 +10,17 @@ on:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{ github.event.repository.private &&
+          (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) &&
+          fromJSON('["self-hosted", "nas"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
+      - name: Pages tools on the private runner
+        if: runner.environment == 'self-hosted'
+        run: |
+          gh --version
+          jq --version
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -61,7 +69,10 @@ jobs:
         # Temporarily paused: restore macos-latest and its required check together.
         os: [ubuntu-latest]
     # Keep the matrix labels: branch protection requires these check names.
-    runs-on: ${{ matrix.os }}
+    runs-on: >-
+      ${{ github.event.repository.private && matrix.os == 'ubuntu-latest' &&
+          (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) &&
+          fromJSON('["self-hosted", "nas"]') || matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -89,7 +100,10 @@ jobs:
   #       run: cargo test -p folioh-cli --test cli_surface --locked
 
   real-export:
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{ github.event.repository.private &&
+          (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) &&
+          fromJSON('["self-hosted", "nas"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

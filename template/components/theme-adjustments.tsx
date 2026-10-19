@@ -208,7 +208,8 @@ export function themeVariants(presets: ThemePreset[]) {
   ]
   return ordered.flatMap((preset) => {
     const control = colorControl(preset)
-    const curated = builtinGalleryVariants.get(preset)
+    const catalog = builtinGalleryVariants.get(preset)
+    const curated = catalog?.length === 0 && preset.id === DEFAULT_CONFIG.presetId ? undefined : catalog
     const values = curated ?? control?.options.map((option) => option.value) ?? [undefined]
     return values.map((value) => {
       const option = control?.options.find((option) => option.value === value)

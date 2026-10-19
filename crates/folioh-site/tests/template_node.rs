@@ -49,6 +49,42 @@ fn driver_json(dir: &Path, script: &str, module: &Path) -> Option<serde_json::Va
 }
 
 #[test]
+fn preview_metadata_uses_each_sites_deploy_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let helper = common::bundled_template().join("lib/site-metadata-url.js");
+    let Some(value) = driver_json(
+        dir.path(),
+        r#"
+const { siteMetadataUrl } = await import(process.argv[2])
+delete process.env.FOLIOH_PREVIEW_URL
+delete process.env.NEXT_PUBLIC_FOLIOH_BASE_PATH
+const results = [siteMetadataUrl("https://site.example/"), siteMetadataUrl("")]
+process.env.FOLIOH_PREVIEW_URL = "https://dev.example/previews/pr-1/"
+results.push(siteMetadataUrl("https://site.example"))
+for (const path of ["/previews/pr-1", "/previews/pr-1/_previews/example", ""]) {
+  process.env.NEXT_PUBLIC_FOLIOH_BASE_PATH = path
+  results.push(siteMetadataUrl("https://site.example"))
+}
+console.log(JSON.stringify(results))
+"#,
+        &helper,
+    ) else {
+        return;
+    };
+    assert_eq!(
+        value,
+        serde_json::json!([
+            "https://site.example",
+            "",
+            "https://dev.example/previews/pr-1",
+            "https://dev.example/previews/pr-1",
+            "https://dev.example/previews/pr-1/_previews/example",
+            "https://dev.example"
+        ])
+    );
+}
+
+#[test]
 fn docs_route_params_expand_index_html_and_underscore_aliases() {
     if !node_available() {
         return;
@@ -254,11 +290,13 @@ import { dirname, join, resolve as resolvePath } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 let root
 let projectTheme
+let extraPresets
 let dependencyUrl
 let ts
 export function initialize(data) {
   root = data.root
   projectTheme = data.projectTheme
+  extraPresets = data.extraPresets
   dependencyUrl = pathToFileURL(join(data.dependencies, "../package.json")).href
   ts = createRequire(dependencyUrl)("typescript")
 }
@@ -278,14 +316,19 @@ export async function resolve(specifier, context, next) {
     ? join(root, specifier.slice(2))
     : parent && /^\.\.?\//.test(specifier) ? resolvePath(parent, specifier) : undefined
   const file = base && findFile(base)
-  if (!file) return next(specifier, specifier.startsWith(".") ? context : { ...context, parentURL: dependencyUrl })
+  // pnpm dependencies resolve their own imports from their package, not the template root.
+  if (!file) return next(specifier, specifier.startsWith(".") || parent?.includes("/node_modules/") ? context : { ...context, parentURL: dependencyUrl })
   const own = projectTheme && file === join(root, "theme/project-theme.ts") ? projectTheme : file
   return { url: pathToFileURL(own).href, shortCircuit: true }
 }
 export async function load(url, context, next) {
   if (!/\.tsx?$/.test(url)) return next(url, context)
   const fileName = fileURLToPath(url)
-  const { outputText } = ts.transpileModule(readFileSync(fileName, "utf8"), {
+  let source = readFileSync(fileName, "utf8")
+  if (fileName === join(root, "theme/preset-catalog.ts") && extraPresets !== undefined) {
+    source = source.replace("export const extraPresetsEnabled: boolean = false // __FOLIOH_EXTRA_PRESETS__", `export const extraPresetsEnabled: boolean = ${extraPresets}`)
+  }
+  const { outputText } = ts.transpileModule(source, {
     fileName,
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   })
@@ -301,7 +344,7 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { runInNewContext } from "node:vm"
 const [loader, root, dependencies, projectTheme] = process.argv.slice(2)
-register(pathToFileURL(loader).href, { data: { root, dependencies, projectTheme } })
+register(pathToFileURL(loader).href, { data: { root, dependencies, projectTheme, extraPresets: true } })
 const load = (path) => import(pathToFileURL(join(root, path)).href)
 const { presets } = await load("theme/presets.ts")
 const { getPresetOptionCombinations, normalizePresetOptions, resolvePresetTheme } = await load("theme/preset-types.ts")
@@ -315,6 +358,7 @@ const feedbackLinks = [
   feedbackHref({ content: "Feedback", labels: "documentation" }, "https://gitlab.example.com/acme/docs/-/tree/main", "API"),
   feedbackHref({ content: "Feedback", labels: "feedback", link: "https://support.example.com/new?from=docs" }, "", "API"),
   feedbackHref({ content: null, labels: "feedback", link: "https://support.example.com/new" }, "", "API"),
+  feedbackHref({ content: "Feedback", labels: "feedback" }, "https://example.com/acme/docs", "API"),
 ]
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 const colourControls = (preset) => preset.controls.filter((control) => control.kind === "color")
@@ -705,9 +749,64 @@ console.log(JSON.stringify({
 }))
 "##;
 
+const THEME_CATALOG_DRIVER: &str = r##"
+import { register } from "node:module"
+import { join } from "node:path"
+import { pathToFileURL } from "node:url"
+import { runInNewContext } from "node:vm"
+const [loader, root, dependencies, projectTheme, extra] = process.argv.slice(2)
+register(pathToFileURL(loader).href, { data: { root, dependencies, projectTheme, extraPresets: extra === "true" } })
+const load = (path) => import(pathToFileURL(join(root, path)).href)
+const model = await load("components/theme-configurator.tsx")
+const { listThemes } = await load("components/theme-gallery.tsx")
+const { themeVariants } = await load("components/theme-adjustments.tsx")
+const { createElement } = await import("react")
+const { renderToStaticMarkup } = await import("react-dom/server")
+const { DEFAULT_CONFIG, SELECTABLE_PRESETS, configForPreset, readThemeConfig, saveThemeConfig } = model
+const store = new Map()
+const localStorage = { getItem: (key) => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)), removeItem: (key) => store.delete(key) }
+globalThis.localStorage = localStorage
+globalThis.window = globalThis
+window.dispatchEvent = () => {}
+const element = { textContent: "" }
+globalThis.document = { documentElement: { dataset: {}, style: {}, classList: { add() {}, remove() {} } }, querySelectorAll: () => [element] }
+const markup = renderToStaticMarkup(createElement(model.ThemeStyleBootstrap))
+const bootstrap = markup.match(/<script[^>]*>([\s\S]*?)<\/script>/)[1]
+const restored = Object.fromEntries(["omarchy", "pastel", DEFAULT_CONFIG.presetId, "beacon"].map((id) => {
+  const config = configForPreset(DEFAULT_CONFIG, id, id === "pastel" ? { palette: "sky" } : undefined)
+  config.customization.fontId = "mono"
+  const raw = JSON.stringify(config)
+  store.clear()
+  store.set(`folioh-theme:${DEFAULT_CONFIG.presetId}`, raw)
+  const read = readThemeConfig()
+  runInNewContext(bootstrap, { document, window, localStorage, Event })
+  const bootPreset = document.documentElement.dataset.foliohPreset
+  const bootCss = element.textContent
+  const untouched = store.get(`folioh-theme:${DEFAULT_CONFIG.presetId}`) === raw
+  saveThemeConfig(config)
+  return [id, { read: read.presetId, boot: bootPreset, saved: readThemeConfig().presetId, font: read.customization.fontId, palette: read.optionsByPreset[read.presetId]?.palette, untouched, cssMatches: bootCss === element.textContent }]
+}))
+console.log(JSON.stringify({
+  ids: SELECTABLE_PRESETS.map((preset) => preset.id).sort(),
+  families: listThemes().map((family) => family.name),
+  variants: themeVariants(SELECTABLE_PRESETS).map(({ preset, option }) => `${preset.id}:${option?.value ?? ""}`),
+  defaultId: DEFAULT_CONFIG.presetId,
+  defaultFont: DEFAULT_CONFIG.customization.fontId,
+  restored,
+}))
+"##;
+
 /// The theme model's facts, or `None` when Node or the template's
 /// frontend dependencies (under `template/` or `.build/`) are absent.
 fn theme_model(project_theme: Option<&str>) -> Option<serde_json::Value> {
+    theme_driver(project_theme, THEME_MODEL_DRIVER, true)
+}
+
+fn theme_driver(
+    project_theme: Option<&str>,
+    script: &str,
+    extra_presets: bool,
+) -> Option<serde_json::Value> {
     let template = common::bundled_template();
     if !node_available() {
         return None;
@@ -724,7 +823,7 @@ fn theme_model(project_theme: Option<&str>) -> Option<serde_json::Value> {
     })?;
     let dir = tempfile::tempdir().unwrap();
     let loader = common::write(dir.path(), "loader.mjs", TEMPLATE_LOADER);
-    let driver = common::write(dir.path(), "driver.mjs", THEME_MODEL_DRIVER);
+    let driver = common::write(dir.path(), "driver.mjs", script);
     let mut args = vec![
         "--no-warnings".to_string(),
         driver.display().to_string(),
@@ -732,13 +831,16 @@ fn theme_model(project_theme: Option<&str>) -> Option<serde_json::Value> {
         template.display().to_string(),
         dependencies.display().to_string(),
     ];
-    if let Some(source) = project_theme {
-        args.push(
-            common::write(dir.path(), "project-theme.ts", source)
-                .display()
-                .to_string(),
-        );
-    }
+    args.push(
+        project_theme
+            .map(|source| {
+                common::write(dir.path(), "project-theme.ts", source)
+                    .display()
+                    .to_string()
+            })
+            .unwrap_or_default(),
+    );
+    args.push(extra_presets.to_string());
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match run_node(&args, dir.path()) {
         Ok(stdout) => Some(serde_json::from_str(stdout.trim()).expect("driver prints json")),
@@ -766,6 +868,7 @@ fn floating_feedback_preserves_the_destination_and_page_context() {
             "https://github.com/acme/docs/issues/new?title=Feedback%20for%20%E2%80%9CInstall%20%26%20run%E2%80%9D&labels=feedback,docs",
             "https://gitlab.example.com/acme/docs/-/issues/new?issue[title]=Feedback%20for%20%E2%80%9CAPI%E2%80%9D&issue[description]=/label%20~documentation%0A",
             "https://support.example.com/new?from=docs",
+            null,
             null,
         ])
     );
@@ -896,4 +999,65 @@ fn pastel_palettes_share_their_ring_edge_and_type_contract() {
         .starts_with("var(--font-dm-sans)"));
     assert_eq!(pastel["siteDefault"], true);
     assert_eq!(data["readerDefaultFailures"], serde_json::json!([]));
+}
+
+#[test]
+fn the_default_catalog_limits_selection_and_saved_themes() {
+    let Some(default) = theme_driver(None, THEME_CATALOG_DRIVER, false) else {
+        return;
+    };
+    assert_eq!(default["ids"], serde_json::json!(["pastel"]));
+    assert_eq!(default["families"], serde_json::json!(["Folioh Pastel"]));
+    assert_eq!(
+        default["variants"],
+        serde_json::json!([
+            "pastel:ink",
+            "pastel:jade",
+            "pastel:lavender",
+            "pastel:peach",
+            "pastel:sky"
+        ])
+    );
+    for key in ["read", "boot", "saved"] {
+        assert_eq!(default["restored"]["omarchy"][key], "pastel");
+    }
+    assert_eq!(
+        default["restored"]["omarchy"]["font"],
+        default["defaultFont"]
+    );
+    assert_eq!(default["restored"]["omarchy"]["untouched"], true);
+    assert_eq!(default["restored"]["omarchy"]["cssMatches"], true);
+    assert_eq!(default["restored"]["pastel"]["palette"], "sky");
+
+    let all = theme_driver(None, THEME_CATALOG_DRIVER, true).unwrap();
+    for key in ["read", "boot", "saved"] {
+        assert_eq!(all["restored"]["omarchy"][key], "omarchy");
+    }
+    assert_eq!(all["restored"]["omarchy"]["cssMatches"], true);
+    assert_eq!(all["variants"].as_array().unwrap().len(), 15);
+
+    let explicit = theme_driver(Some("export const projectThemePreset = null\nexport const projectThemeDefaultConfig = { presetId: 'beacon' }\n"), THEME_CATALOG_DRIVER, false).unwrap();
+    assert_eq!(explicit["ids"], serde_json::json!(["beacon", "pastel"]));
+    assert_eq!(explicit["defaultId"], "beacon");
+    assert!(explicit["variants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|value| value.as_str().unwrap().starts_with("beacon:")));
+    for key in ["read", "boot", "saved"] {
+        assert_eq!(explicit["restored"]["omarchy"][key], "beacon");
+    }
+
+    let project = theme_driver(Some(r#"export const projectThemeDefaultConfig = {}
+export const projectThemePreset = { id: 'beacon', name: 'Project Beacon', description: '', scene: '', preview: { light: '#123456', dark: '#abcdef' }, defaultOptions: {}, controls: [], resolve: () => ({ preview: { light: '#123456', dark: '#abcdef' }, radius: '0.75rem', style: {}, light: { '--background': '#ffffff', '--foreground': '#123456' }, dark: { '--background': '#123456', '--foreground': '#ffffff' } }) }
+"#), THEME_CATALOG_DRIVER, false).unwrap();
+    assert_eq!(project["ids"], serde_json::json!(["beacon", "pastel"]));
+    assert!(project["families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|value| value == "Project Beacon"));
+    for key in ["read", "boot", "saved"] {
+        assert_eq!(project["restored"]["beacon"][key], "beacon");
+    }
 }

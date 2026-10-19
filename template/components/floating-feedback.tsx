@@ -1,6 +1,15 @@
 "use client"
 
 import { useConfig, useThemeConfig } from "nextra-theme-docs"
+import { Comment01Icon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
+import { Button } from "@/components/ui/button"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 type FeedbackConfig = ReturnType<typeof useThemeConfig>["feedback"]
 
@@ -23,7 +32,7 @@ export function feedbackHref(
   if (origin.includes("github")) {
     return `${origin}/${owner}/${name}/issues/new?title=${title}&labels=${labels || ""}`
   }
-  return "#"
+  return null
 }
 
 export function FloatingFeedback() {
@@ -32,5 +41,25 @@ export function FloatingFeedback() {
   const href = feedbackHref(feedback, docsRepositoryBase, activeMetadata?.title)
   if (href === null) return null
 
-  return <a className="folioh-feedback" href={href} target="_blank" rel="noreferrer">Feedback</a>
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button asChild variant="secondary" size="icon-lg" className="folioh-feedback rounded-full">
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Give feedback about ${activeMetadata?.title || "this page"} (opens in a new tab)`}
+            >
+              <HugeiconsIcon icon={Comment01Icon} data-icon="inline-start" aria-hidden="true" />
+            </a>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="left" sideOffset={8} className="folioh-feedback-label">
+          Feedback
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
 }

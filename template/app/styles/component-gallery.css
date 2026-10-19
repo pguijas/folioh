@@ -1,0 +1,148 @@
+/* Component gallery: the specimens use the components' own theme styles. */
+.component-gallery {
+  display: grid;
+  gap: 2.5rem;
+  margin-block: 1.75rem 3rem;
+  min-width: 0;
+}
+.component-gallery-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.component-gallery-nav a {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.component-gallery-nav a:hover {
+  color: var(--foreground);
+  background: var(--muted);
+}
+.component-gallery-family > h2 {
+  margin: 0;
+  margin-bottom: 1rem;
+  font-family: var(--folioh-heading-font-family);
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1.2;
+  scroll-margin-top: 6rem;
+}
+.component-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+.component-gallery-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.component-gallery-preview {
+  position: relative;
+  min-width: 0;
+  height: 16rem;
+  overflow: clip;
+}
+.component-gallery-fit {
+  position: absolute;
+  inset: 1.5rem;
+}
+.component-gallery-specimen {
+  display: flow-root;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 30rem;
+  transform: translate(-50%, -50%) scale(var(--gallery-scale, 0.5));
+}
+.component-gallery-specimen[data-compact] {
+  width: max-content;
+  max-width: 30rem;
+}
+.component-gallery-specimen [data-slot="tab-panel"] {
+  min-width: 0;
+}
+.component-gallery-specimen pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.component-gallery-specimen > :first-child {
+  margin-top: 0;
+}
+.component-gallery-specimen > :last-child {
+  margin-bottom: 0;
+}
+/* The generated page uses a desktop viewport scaled to the 30rem specimen. */
+.component-gallery-specimen [data-slot="doc-preview"] [data-slot="preview-canvas"] {
+  height: 13.125rem;
+  overflow: hidden;
+}
+.component-gallery-specimen [data-slot="preview-frame"] {
+  display: block;
+  width: 80rem;
+  max-width: none;
+  height: 35rem;
+  transform: scale(0.375);
+  transform-origin: top left;
+}
+/* Corner artwork follows the specimen's height rather than its wide frame. */
+html[data-folioh-preset="pastel"] .component-gallery-specimen [data-slot="callout"]::after {
+  top: 50%;
+  right: 0.5rem;
+  width: auto;
+  height: 70%;
+  max-height: 4rem;
+  transform: translateY(-50%);
+}
+.component-gallery-link {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  color: var(--foreground);
+  text-decoration: none;
+}
+.component-gallery-link:hover {
+  color: var(--primary);
+}
+.component-gallery-link {
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.5;
+}
+.component-gallery-link > span {
+  color: var(--muted-foreground);
+}
+.component-gallery :is(.component-gallery-link, .component-gallery-nav a):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
+  border-radius: 0.25rem;
+}
+/* Only this visual index uses the otherwise-empty table-of-contents column. */
+div:has(> article .component-gallery) > .nextra-toc {
+  display: none;
+}
+.nextra-sidebar ~ article:has(.component-gallery) {
+  flex: 1;
+  min-width: 0;
+  max-width: 72rem;
+}
+@media (width < 64rem) {
+  .component-gallery-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (width < 48rem) {
+  .component-gallery { gap: 2rem; }
+  .component-gallery-fit { inset: 1rem; }
+}

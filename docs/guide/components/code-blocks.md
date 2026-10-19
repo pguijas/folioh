@@ -4,6 +4,7 @@ Fenced code blocks with syntax highlighting, line highlighting, line numbers, fi
 
 Code blocks use standard Markdown fenced code block syntax with meta strings for additional features.
 Copy controls appear when readers hover over or focus a code block.
+The Code Blocks and CodeGroup gallery previews use the same syntax highlighting and copy controls.
 
 ## API
 

@@ -1,10 +1,8 @@
 ---
 title: Components
-description: Reusable MDX components for Folioh documentation pages, including callouts, tabs, previews, diagrams, and API reference helpers.
+description: A gallery of the building blocks for your docs. Try an example, then open its guide.
 ---
 
 # Components
-
-Reusable MDX components for Folioh documentation pages, including callouts, tabs, previews, diagrams, and API reference helpers.
 
 <ComponentIndex />

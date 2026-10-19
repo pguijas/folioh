@@ -20,7 +20,10 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{ github.event.repository.private &&
+          (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) &&
+          fromJSON('["self-hosted", "nas"]') || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: production-source
@@ -77,6 +80,7 @@ jobs:
       - name: Build docs
         env:
           FOLIOH_BASE_PATH: "${{ steps.pages.outputs.base_path || '/' }}"
+          FOLIOH_PREVIEW_URL: ${{ github.event.repository.private && steps.pages.outputs.base_url || '' }}
         run: folioh build --clean
 
       - name: Preserve branch previews

@@ -14,6 +14,7 @@ but with your project's brand, typography, accent, spacing, and header defaults.
 ```yaml
 theme:
   preset: "pastel"
+  extra_presets: false
   dark_mode: true
   logo: "docs/assets/logo.svg"
   favicon: "docs/assets/favicon.ico"
@@ -22,17 +23,20 @@ theme:
 | Field | Purpose |
 |-------|---------|
 | `preset` | Default visual preset for the generated site; omitted, Folioh Pastel with Ink. |
+| `extra_presets` | `false` by default: Pastel, the configured site preset and project presets remain selectable. Set `true` to enable the full bundled catalog. |
 | `dark_mode` | `true` (the default) offers light, dark, and system modes through `next-themes`; `false` keeps the site light, unless the reader applies a dark-only palette such as a dark Omarchy one. |
 | `logo` | Copies a project logo into the generated site and shows it beside the project name in the docs and landing navbars. |
 | `favicon` | Copies a project favicon into the generated site. |
 
-`preset` must be a preset the theme picker shows: a
+`preset` must name a
 [built-in id](../components/theme-configurator#preset-library), one a
 [theme package](./theme-packages#register-a-custom-preset) declares, or a new id
 that `theme.name`, `theme.tokens` or `theme.style` defines (see
 [Project Presets](#project-presets)). Any other value stops the build with the
 list of valid ids and the nearest one, so `preset: "beakon"` asks whether you
 meant `beacon`.
+
+The default picker offers Pastel and its five palettes. Extra bundled themes require `theme.extra_presets: true`. A reader’s saved disabled theme falls back to the configured site preset before the page appears. Folioh’s own site keeps extra presets disabled.
 
 Dark mode is enabled by default. When enabled, readers can use the mode radios in
 the theme picker or press `d` outside form fields to switch between light and dark

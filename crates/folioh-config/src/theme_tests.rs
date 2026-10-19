@@ -46,6 +46,25 @@ fn theme_preset_and_scalars_are_typed() {
 }
 
 #[test]
+fn extra_presets_require_an_explicit_boolean_opt_in() {
+    assert!(!parse_ok("project: {name: T}\n").theme.extra_presets);
+    for value in ["true", "false"] {
+        let config = parse_ok(&format!(
+            "project: {{name: T}}\ntheme: {{extra_presets: {value}}}\n"
+        ));
+        assert_eq!(config.theme.extra_presets, value == "true");
+    }
+    for value in ["null", "yes", "1"] {
+        assert_eq!(
+            parse_err(&format!(
+                "project: {{name: T}}\ntheme: {{extra_presets: {value}}}\n"
+            )),
+            "theme.extra_presets must be a boolean"
+        );
+    }
+}
+
+#[test]
 fn project_theme_contract_parses_to_canonical_ids() {
     let config = parse_ok(
         r#"

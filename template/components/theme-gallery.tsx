@@ -26,6 +26,7 @@ import { ThemePixelField, ThemeWordmark } from "@/components/theme-artwork"
 import { PastelArtwork } from "@/components/pastel-artwork"
 import {
   DEFAULT_CONFIG,
+  SELECTABLE_PRESETS,
   type ThemeConfig,
   configForPreset,
   configVars,
@@ -41,7 +42,6 @@ import {
   themeVariants,
 } from "@/components/theme-adjustments"
 import { switchScheme } from "@/lib/scheme-transition"
-import { presets } from "@/theme/presets"
 import { builtinGalleryVariants, getGroups, groupPresetsForDisplay } from "@/theme/preset-registry"
 import {
   type PresetControl,
@@ -79,7 +79,7 @@ interface Variant {
 // Group Folioh's styles without changing stored preset IDs.
 // Project overrides and independently registered presets remain selectable.
 export function listThemes(): GalleryTheme[] {
-  const groups = groupPresetsForDisplay(getGroups(), presets)
+  const groups = groupPresetsForDisplay(getGroups(), SELECTABLE_PRESETS)
   const project = groups.find((group) => group.id === "project")?.presets ?? []
   const remaining = groups.flatMap((group) => group.presets).filter((preset) => !project.includes(preset))
   const folioh = remaining.filter((preset) => builtinGalleryVariants.has(preset) && preset.id !== "omarchy" && preset.id !== "pastel")

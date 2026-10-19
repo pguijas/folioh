@@ -1,5 +1,107 @@
 //! Persistent runner workspaces must not carry files into the next build.
 
+#[test]
+fn private_workflows_select_the_nas_without_exposing_public_or_fork_jobs() {
+    use serde_json::json;
+    use serde_yaml_ng::Value;
+    use std::{fs, path::Path, process::Command};
+
+    if Command::new("node").arg("--version").output().is_err() {
+        return;
+    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut cases = Vec::new();
+    for file in ["rust.yml", "branch-previews.yml", "pages.yml"] {
+        let workflow: Value = serde_yaml_ng::from_str(
+            &fs::read_to_string(root.join(".github/workflows").join(file)).unwrap(),
+        )
+        .unwrap();
+        if file == "rust.yml" {
+            assert_eq!(
+                workflow["jobs"]["test"]["strategy"]["matrix"]["os"],
+                serde_yaml_ng::to_value(["ubuntu-latest"]).unwrap(),
+                "preserve the required test (ubuntu-latest) check name"
+            );
+        }
+        for (job_name, job) in workflow["jobs"].as_mapping().unwrap() {
+            let expression = job["runs-on"].as_str().unwrap();
+            for (private, event, head) in [
+                (true, "push", None),
+                (true, "workflow_dispatch", None),
+                (true, "pull_request", Some("example/docs")),
+                (true, "pull_request_target", Some("example/docs")),
+                (true, "pull_request", Some("contributor/docs")),
+                (true, "pull_request_target", Some("contributor/docs")),
+                (false, "push", None),
+                (false, "pull_request", Some("example/docs")),
+            ] {
+                let expected = if private && head.is_none_or(|head| head == "example/docs") {
+                    json!(["self-hosted", "nas"])
+                } else {
+                    json!("ubuntu-latest")
+                };
+                cases.push(json!({
+                    "label": format!("{file}/{}: {private}/{event}/{head:?}", job_name.as_str().unwrap()),
+                    "expression": expression,
+                    "github": {
+                        "repository": "example/docs",
+                        "event_name": event,
+                        "event": {
+                            "repository": { "private": private },
+                            "pull_request": head.map(|head| json!({"head": {"repo": {"full_name": head}}}))
+                        }
+                    },
+                    "matrix": { "os": "ubuntu-latest" },
+                    "expected": expected
+                }));
+            }
+            if job_name.as_str() == Some("test") {
+                let mut case = cases.last().unwrap().clone();
+                case["label"] = json!(format!("{file}/test: private macOS stays hosted"));
+                case["github"]["event"]["repository"]["private"] = json!(true);
+                case["matrix"]["os"] = json!("macos-latest");
+                case["expected"] = json!("macos-latest");
+                cases.push(case);
+            }
+        }
+    }
+    // These selectors use the shared JS/GitHub boolean, property-access and
+    // JSON subset. Execute their actual expressions across the trust contexts.
+    let output = Command::new("node")
+        .args([
+            "-e",
+            r#"
+const { deepStrictEqual } = require('node:assert')
+const { runInNewContext } = require('node:vm')
+for (const { label, expression, github, matrix, expected } of JSON.parse(process.argv[1])) {
+  const source = expression.trim().slice(3, -2)
+  const actual = runInNewContext(source, { github, matrix, fromJSON: JSON.parse })
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)), expected, label)
+}
+"#,
+        ])
+        .arg(serde_json::to_string(&cases).unwrap())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for file in [
+        ".github/workflows/release.yml",
+        "crates/folioh-cli/src/workflows/pages.yml",
+        "crates/folioh-cli/src/workflows/branch-previews.yml",
+    ] {
+        assert!(
+            !fs::read_to_string(root.join(file))
+                .unwrap()
+                .contains("self-hosted"),
+            "{file} stays hosted"
+        );
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn pages_jobs_clear_their_own_workspace_without_touching_other_jobs() {

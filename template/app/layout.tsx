@@ -1,3 +1,4 @@
+import { siteMetadataUrl } from "@/lib/site-metadata-url"
 import { Bricolage_Grotesque, DM_Sans, Geist, Geist_Mono, Sora, JetBrains_Mono } from "next/font/google"
 import { ThemeStyleBootstrap } from "@/components/theme-configurator"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -7,9 +8,7 @@ import "katex/dist/katex.min.css"
 import "./globals.css"
 
 const configuredSiteUrl = "__SITE_URL__"
-const siteUrl = configuredSiteUrl.startsWith("http")
-  ? configuredSiteUrl.replace(/\/$/, "")
-  : ""
+const siteUrl = siteMetadataUrl(configuredSiteUrl)
 const rootUrl = siteUrl ? `${siteUrl}/` : ""
 const projectName = "__PROJECT_NAME__"
 const projectDescription = "__PROJECT_DESCRIPTION__"

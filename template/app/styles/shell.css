@@ -29,40 +29,51 @@ body:has(.folioh-feedback) .nextra-toc > div > div:has(> a:first-child):not(:has
   right: max(16px, env(safe-area-inset-right));
   bottom: max(16px, env(safe-area-inset-bottom));
   z-index: 40;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--card);
-  color: var(--muted-foreground);
+  padding: 0;
   box-shadow: 0 3px 12px rgb(0 0 0 / 0.1);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.25;
   text-decoration: none;
+  transition: box-shadow var(--folioh-motion-micro) var(--folioh-ease-enter);
 }
 
-.folioh-feedback:hover {
-  background: var(--muted);
-  color: var(--foreground);
+.folioh-feedback svg {
+  transition: transform var(--folioh-motion-micro) var(--folioh-ease-enter);
 }
 
-.folioh-feedback:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 3px;
+@media (hover: hover) {
+  .folioh-feedback:hover {
+    box-shadow: 0 5px 16px rgb(0 0 0 / 0.16);
+  }
+
+  .folioh-feedback:hover svg {
+    transform: translateY(-1px) rotate(-8deg) scale(1.08);
+  }
 }
 
-@media (pointer: coarse) {
+.folioh-feedback-label {
+  animation-duration: var(--folioh-motion-micro);
+}
+
+@media (width < 48rem), (pointer: coarse) {
   .folioh-feedback {
-    min-height: 44px;
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .folioh-feedback,
+  .folioh-feedback svg,
+  .folioh-feedback:hover svg,
+  .folioh-feedback-label {
+    animation: none;
+    transition: none;
+    transform: none;
   }
 }
 
 @media print {
-  .folioh-feedback {
+  .folioh-feedback,
+  .folioh-feedback-label {
     display: none;
   }
 }

@@ -51,6 +51,7 @@ export default async function PreviewsLayout({
         </Navbar>
       }
       darkMode={false}
+      feedback={{ content: null }}
       pageMap={await getPageMap("/docs")}
       footer={<Footer />}
     >

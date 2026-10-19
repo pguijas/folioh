@@ -92,6 +92,7 @@ pub const THEME_VARIANT_COMBINATION_LIMIT: usize = 256;
 pub struct ThemeConfig {
     pub preset: String,
     pub dark_mode: bool,
+    pub extra_presets: bool,
     pub name: String,
     pub description: String,
     pub scene: String,
@@ -785,8 +786,9 @@ pub fn theme_radius(value: &Value, path: &str) -> Result<String, ConfigError> {
 }
 
 /// Every `theme:` key; `path` is the legacy spelling of `package`.
-const THEME_KEYS: [&str; 16] = [
+const THEME_KEYS: [&str; 17] = [
     "dark_mode",
+    "extra_presets",
     "preset",
     "name",
     "description",
@@ -811,6 +813,7 @@ pub(crate) fn parse_theme(
 ) -> Result<ThemeConfig, ConfigError> {
     warn_unknown_keys(theme, &THEME_KEYS, "theme", warnings);
     let dark_mode = bool_field(theme, "dark_mode", "theme.dark_mode", true)?;
+    let extra_presets = bool_field(theme, "extra_presets", "theme.extra_presets", false)?;
     let preset = string_field(theme, "preset", "theme.preset", "pastel")?;
     let name = theme_string(get(theme, "name"));
     let description = theme_string(get(theme, "description"));
@@ -850,6 +853,7 @@ pub(crate) fn parse_theme(
     Ok(ThemeConfig {
         preset,
         dark_mode,
+        extra_presets,
         name,
         description,
         scene,

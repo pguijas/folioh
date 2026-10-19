@@ -3,6 +3,28 @@
 All notable user-facing changes are recorded here. Folioh follows semantic
 versioning while the public CLI, configuration, and plugin contracts stabilize.
 
+## 0.3.4 — 2026-10-19
+
+### Added
+
+- The Components guide includes live examples with links to each component guide.
+
+### Changed
+
+- The theme picker defaults to five Pastel palettes. Set `theme.extra_presets: true`
+  to enable the other bundled presets; explicit project presets remain available.
+- Feedback requires explicit activation and uses a compact icon with a hover and
+  keyboard-focus label. The icon motion respects reduced-motion preferences.
+- Pastel social cards use the configured light palette and shared artwork.
+  Preview metadata points to the deployed site's own images.
+- Header navigation uses the Docs label and landing roadmap summaries are shorter.
+
+### Fixed
+
+- Gallery examples scale and center within their cards, with contained decorative
+  shapes and one background through the guide link.
+- Gallery code examples use the normal syntax highlighter and copy controls.
+
 ## 0.3.3 — 2026-10-09
 
 ### Fixed

@@ -1,3 +1,4 @@
+import { siteMetadataUrl } from "@/lib/site-metadata-url"
 import { existsSync } from "fs"
 import { join } from "path"
 import { generateStaticParamsFor, importPage } from "nextra/pages"
@@ -15,9 +16,7 @@ import { PastelArtwork } from "@/components/pastel-artwork"
 
 const _nextraParams = generateStaticParamsFor("mdxPath")
 const configuredSiteUrl = "__SITE_URL__"
-const siteUrl = configuredSiteUrl.startsWith("http")
-  ? configuredSiteUrl.replace(/\/$/, "")
-  : ""
+const siteUrl = siteMetadataUrl(configuredSiteUrl)
 const projectName = "__PROJECT_NAME__"
 const projectDescription = "__PROJECT_DESCRIPTION__"
 const docsOgImageUrl = siteUrl

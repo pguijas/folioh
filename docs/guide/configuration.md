@@ -48,7 +48,7 @@ Project metadata shown in the navbar, page titles, and generated output.
 |-------|------|---------|-------------|
 | `name` | `string` | `"Untitled"` | Project name displayed in the navbar and page titles. If missing or empty, a warning is emitted and `"Untitled"` is used. |
 | `version` | `string` | `"0.0.0"` | Version string shown in the docs header. Quote it (`version: "1.0"`): an unquoted `1.0` is a YAML number, not a string, and fails the load. |
-| `repo` | `string` | `""` | URL to the source repository (e.g. GitHub). Used for source links, the navbar repository link, the small Feedback button at the bottom right of docs pages (it opens an issue there with the current page title) and project metadata. Without it, none of these links is shown. |
+| `repo` | `string` | `""` | URL to the source repository (e.g. GitHub). Used for source links, the navbar repository link and project metadata. Feedback requires a separate opt-in through `feedback.enabled`. Without a repository, these links are hidden. |
 | `repo_ref` | `string` | `"main"` | Branch, tag, or commit used for generated source links. |
 | `url` | `string` | `""` | Public site URL for sitemap, canonical metadata, and social previews. It does not control local routing or static asset paths. |
 
@@ -237,6 +237,7 @@ Controls the visual appearance of the generated documentation site.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `preset` | `string` | `"pastel"` | Default visual preset for the generated site (Folioh Pastel with Ink). `folioh init` offers `organic-editorial`, `beacon`, `atlas`, `workshop`, and `pastel`; it may also be any built-in id, one a theme package or overlay declares, or a new id that `theme.name`, `theme.tokens` or `theme.style` defines. Anything else stops the build and names the nearest id. |
+| `extra_presets` | `bool` | `false` | Enable the full bundled theme catalog. By default the picker offers Pastel, the configured site preset and project presets; saved disabled themes fall back to the site default. |
 | `dark_mode` | `bool` | `true` | Enable dark mode: the theme picker's Light, Dark and System radios, the toggles `theme.header.theme_toggle` adds, and the `d` key that switches between light and dark themes; `false` keeps the site light, with no mode controls, toggles or `d` shortcut, and `theme.header.theme_toggle` then warns; a dark-only palette the reader applies, such as a dark Omarchy one, still turns the page dark. Must be a YAML boolean; an explicit `null` is an error. |
 | `logo` | `string` | `""` | Path to a logo image shown beside the project name in the docs navbar and the landing navbar, under `deploy.base_path`. Resolved relative to the project directory; a missing file stops the build. |
 | `favicon` | `string` | `""` | Path to a favicon file. Resolved relative to the project directory. |
@@ -333,6 +334,31 @@ nav:
   - "Source Code"
   - "Changelog"
 ```
+
+### feedback
+
+Feedback is disabled by default. A repository link alone does not enable it.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | `bool` | `false` | Show the Feedback button on documentation pages. Requires `project.repo` pointing to a GitHub or GitLab repository. |
+
+```yaml
+project:
+  name: "my-library"
+  repo: "https://github.com/org/my-library"
+
+feedback:
+  enabled: true
+```
+
+The floating message icon opens a new issue with the current page title. Its
+Feedback tooltip appears on hover or keyboard focus. The circular control is
+36px on desktop and keeps a 44px target on mobile and touch screens. It follows
+the active theme; reduced-motion preferences disable its hover animation.
+Omitting `feedback`, using an empty mapping, or setting `enabled: false` hides
+both the floating control and the table-of-contents feedback action. A
+configuration change requires restarting `folioh serve`.
 
 ### sidebar
 
@@ -473,13 +499,13 @@ folioh validates your config file. A few problems stop the load; everything else
 
 - **Duplicate keys** anywhere in the file fail the load.
 
-- **Typed keys** are checked. String keys such as `project.version` must be quoted YAML strings (`version: "1.0"`); boolean keys (`theme.dark_mode`, `llm.*`, `search.enabled`, `sidebar.default_collapsed`) must be YAML booleans. An explicit `null` on a typed key is an error.
+- **Typed keys** are checked. String keys such as `project.version` must be quoted YAML strings (`version: "1.0"`); boolean keys (`theme.dark_mode`, `theme.extra_presets`, `llm.*`, `search.enabled`, `feedback.enabled`, `sidebar.default_collapsed`) must be YAML booleans. An explicit `null` on a typed key is an error.
 
 - **Missing config file** stops the command with an error naming the path that was expected.
 
-- **Unknown top-level keys** produce a warning listing the unrecognized keys. Core top-level keys are: `project`, `source`, `output`, `public`, `theme`, `template`, `nav`, `sidebar`, `llm`, `search`, `components`, and `deploy`, plus the sections of the built-in integrations: `landing`, `roadmap`, and `openapi`. `versions` and `i18n` are recognised and [ignored with a warning](#versions-and-i18n).
+- **Unknown top-level keys** produce a warning listing the unrecognized keys. Core top-level keys are: `project`, `source`, `output`, `public`, `theme`, `template`, `nav`, `sidebar`, `llm`, `search`, `feedback`, `components`, and `deploy`, plus the sections of the built-in integrations: `landing`, `roadmap`, and `openapi`. `versions` and `i18n` are recognised and [ignored with a warning](#versions-and-i18n).
 
-- **Unknown keys inside a core section** (`project`, `source`, `theme`, `template`, `llm`, `deploy`, `sidebar`, `search`, `components`) produce a warning too, naming the nearest valid key when one is close: `Unknown project keys in docs.yaml: vesion (did you mean 'version'?)`. The `landing`, `roadmap` and `openapi` sections are not checked in this release: a typo there is ignored without a warning. An unknown `source.python.docstring_style` warns and falls back to Google.
+- **Unknown keys inside a core section** (`project`, `source`, `theme`, `template`, `llm`, `deploy`, `sidebar`, `search`, `feedback`, `components`) produce a warning too, naming the nearest valid key when one is close: `Unknown project keys in docs.yaml: vesion (did you mean 'version'?)`. The `landing`, `roadmap` and `openapi` sections are not checked in this release: a typo there is ignored without a warning. An unknown `source.python.docstring_style` warns and falls back to Google.
 
 - **The `plugins:` key** warns with exactly `project plugins are not available in this release; the plugins key is ignored`. The `configKeys` list in the authoring contract (`/_folioh/contract.json`) never includes `plugins`.
 
