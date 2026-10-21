@@ -2,7 +2,7 @@
 
 The theme picker lets readers choose how the site looks. A preset owns color tokens, document rhythm, code block treatment, borders, radius defaults, typography defaults, and its own controls; the picker groups related presets into families, shows complete color-and-style variants as swatches, and offers manual controls in Customize.
 
-Applied choices are persisted in `localStorage` under a project-scoped key derived from the configured default preset, and the saved theme is the same on the landing page, the docs and the previews. The default theme CSS is also rendered into the page so the generated site does not flash or fall back to Folioh's bundled typography before hydration. When moving from the former Roller default to Folioh Pastel, saved reader choices are reused if the new storage key is absent; an existing new key takes precedence.
+Applied choices are persisted in `localStorage` under a project-scoped key derived from the configured default preset, and the saved theme is the same on the landing page, the docs and the previews. The default theme CSS is also rendered into the page so the generated site does not flash or fall back to Folioh's bundled typography before hydration. Saved choices are restored only when their preset is in the enabled catalog. A disabled preset falls back to the site default before hydration. When moving from the former Roller default to Folioh Pastel, an existing new storage key takes precedence.
 
 ## API
 
@@ -18,11 +18,11 @@ The first step shows each color-and-style variant as a slide drawn as a small do
 
 Every slide shows the same short Getting started page with real text, code and cards. It uses the theme's heading and body fonts, reading rhythm, section rules, code treatment and outer frame, so those differences remain visible while comparing colors. Customize updates this same preview.
 
-The picker has three built-in families and fifteen choices: six Folioh styles, five Folioh Pastel palettes and four Omarchy palettes. Each Folioh style has one complete recipe; Customize covers the smaller variations. Project presets and independently registered presets remain available as separate families with all their choices.
+By default the picker offers Folioh Pastel with Ink, Jade, Lavender, Peach and Sky. Set `theme.extra_presets: true` to enable the full bundled catalog: six Folioh styles, five Pastel palettes and four Omarchy palettes. An explicitly configured `theme.preset`, project presets and independently registered presets remain selectable without that opt-in.
 
-The catalog stays ordered Folioh, Folioh Pastel and Omarchy, with project presets first when defined. Each opening centers your saved theme and palette, including its customizations. Opening it leaves the applied theme unchanged.
+With extra presets enabled, the catalog stays ordered Folioh, Folioh Pastel and Omarchy, with project presets first when defined. Each opening centers your saved theme and palette, including its customizations. Opening it leaves the applied theme unchanged.
 
-Each swatch applies its variant's colors and default style together. For example, Ballpoint includes its typography, code treatment and corners. A sun or moon marks a fixed light or dark scheme. The final circle, with the adjustments icon, opens Customize. The carousel follows the swatch order through each family, then enters the next family: Typewriter leads to Folioh Pastel's Ink, Jade, Lavender, Peach and Sky, then Catppuccin Latte, and Hackerman wraps to Roller.
+Each swatch applies its variant's colors and default style together. For example, Ballpoint includes its typography, code treatment and corners. A sun or moon marks a fixed light or dark scheme. The final circle, with the adjustments icon, opens Customize. The carousel follows the swatch order through the enabled families and wraps at both ends.
 
 | Input | Action |
 |-------|--------|
@@ -73,7 +73,7 @@ The navbars carry no separate light/dark toggle unless `theme.header.theme_toggl
 
 ### Preset Library
 
-Presets keep their existing IDs for `theme.preset`, stored preferences and theme packages. The picker groups them by visible family:
+Presets keep their existing IDs for `theme.preset`, stored preferences and theme packages. The full catalog below requires `theme.extra_presets: true`; the configured site preset and project presets are always available:
 
 | Family | Choices |
 |--------|---------|
@@ -114,7 +114,7 @@ Earlier saved styles and palettes still render unchanged and can be adjusted in 
 
 Folioh Pastel is a separate family with preset ID `pastel` and five palettes: Ink (default), Jade, Lavender, Peach and Sky. Each supports light and dark and uses the same organic shapes, Grotesque typography and 0.75rem default radius. Choose a palette from its swatches in T. Jade keeps the original cool paper, petrol ink and pastel fills; older saved Pastel choices without a palette still resolve to Jade.
 
-Pastel’s generated logo and favicon use the same irregular silhouette as its artwork. The mark appears in the navbars, landing footer, demo, picker preview and social images. Page logos follow the reader’s selected theme; the favicon and social images use the site’s configured default. Other themes keep their normal mark. Explicit project logos and favicons retain their own artwork.
+Pastel’s generated logo and favicon use the same irregular silhouette as its artwork. The mark appears in the navbars, landing footer, demo, picker preview and social images. Page logos follow the reader’s selected theme; the favicon and social images use the site’s configured default. Pastel social cards also use the configured light palette and the site’s freehand contours. The generated image is fixed at build time, independent of a reader’s saved theme. Other themes keep their normal mark. Explicit project logos and favicons retain their own artwork.
 
 On desktop the 288 px floating sidebar contains the project branding, search and theme controls. Its header stays attached when scrolling or collapsing the sidebar; the navigation list scrolls independently below the search. Collapsing leaves an 84 px rail with the logo and 44 px controls aligned vertically. The magnifier opens a search panel beside the rail, with matching input and result widths. Escape closes it and returns focus to the magnifier; clicking outside or choosing a result closes it too. Cmd+K or Ctrl+K opens the same panel. The hidden navigation leaves the keyboard tab order until expanded. The desktop table of contents floats beside the article without a background and stays in view while scrolling; long outlines scroll within it. It marks the section in view and shows reading progress where supported. Callouts keep their functional icons on soft asymmetric holders. FeatureCard keeps its named Hugeicons centered over four original organic backgrounds, alternating with the card colors; text/emoji fallback and cards without icons stay unchanged. Shell icons remain unchanged. Decorative corner marks, step tabs and timeline markers use original organic outlines. Code blocks have a file header and language pill, and TerminalSession is a petrol window with three tabs. Pill tabs glide between selections, accordions are soft cards, and light/dark changes reveal the new scheme from the control where supported. Reduced motion removes these transitions. The MDX does not change, and other presets keep their own look.
 

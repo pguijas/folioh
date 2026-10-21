@@ -1,7 +1,7 @@
 {
-  "foliohVersion": "0.3.3",
+  "foliohVersion": "0.3.4",
   "mdxContractVersion": "1.1",
-  "generatedAt": "2026-10-15T06:42:34Z",
+  "generatedAt": "2026-10-21T22:30:25Z",
   "instructions": "Ignore fields you do not recognise; later Folioh releases add them. mdxContractVersion versions the components list only.",
   "components": [
     {
@@ -240,6 +240,7 @@
   "configKeys": [
     "components",
     "deploy",
+    "feedback",
     "landing",
     "llm",
     "nav",

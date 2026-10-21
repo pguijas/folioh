@@ -19,6 +19,12 @@ template before generated content and metadata are injected.
 Use a theme package when YAML personalization is too limited, but a full custom
 template would duplicate too much of Folioh's default docs runtime.
 
+Folioh’s own site uses this layer for its Docs/Board product selector. Its
+landing passes a project-owned component into `LandingNavbar`’s
+`productSwitcher` slot. The bundled navbar keeps its original monogram and
+theme gallery, and other sites receive no product links unless their own
+layout supplies the slot.
+
 ## Configure a Package
 
 ```yaml

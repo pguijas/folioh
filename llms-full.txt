@@ -952,6 +952,7 @@ Fenced code blocks with syntax highlighting, line highlighting, line numbers, fi
 
 Code blocks use standard Markdown fenced code block syntax with meta strings for additional features.
 Copy controls appear when readers hover over or focus a code block.
+The Code Blocks and CodeGroup gallery previews use the same syntax highlighting and copy controls.
 
 ## API
 
@@ -1540,8 +1541,6 @@ Visualize an extension lifecycle with stage names, hook names, and short descrip
 
 # Components
 URL: https://folioh.site/docs/components/
-
-Reusable MDX components for Folioh documentation pages, including callouts, tabs, previews, diagrams, and API reference helpers.
 
 ---
 
@@ -2207,7 +2206,7 @@ URL: https://folioh.site/docs/components/theme-configurator/
 
 The theme picker lets readers choose how the site looks. A preset owns color tokens, document rhythm, code block treatment, borders, radius defaults, typography defaults, and its own controls; the picker groups related presets into families, shows complete color-and-style variants as swatches, and offers manual controls in Customize.
 
-Applied choices are persisted in `localStorage` under a project-scoped key derived from the configured default preset, and the saved theme is the same on the landing page, the docs and the previews. The default theme CSS is also rendered into the page so the generated site does not flash or fall back to Folioh's bundled typography before hydration. When moving from the former Roller default to Folioh Pastel, saved reader choices are reused if the new storage key is absent; an existing new key takes precedence.
+Applied choices are persisted in `localStorage` under a project-scoped key derived from the configured default preset, and the saved theme is the same on the landing page, the docs and the previews. The default theme CSS is also rendered into the page so the generated site does not flash or fall back to Folioh's bundled typography before hydration. Saved choices are restored only when their preset is in the enabled catalog. A disabled preset falls back to the site default before hydration. When moving from the former Roller default to Folioh Pastel, an existing new storage key takes precedence.
 
 ## API
 
@@ -2223,11 +2222,11 @@ The first step shows each color-and-style variant as a slide drawn as a small do
 
 Every slide shows the same short Getting started page with real text, code and cards. It uses the theme's heading and body fonts, reading rhythm, section rules, code treatment and outer frame, so those differences remain visible while comparing colors. Customize updates this same preview.
 
-The picker has three built-in families and fifteen choices: six Folioh styles, five Folioh Pastel palettes and four Omarchy palettes. Each Folioh style has one complete recipe; Customize covers the smaller variations. Project presets and independently registered presets remain available as separate families with all their choices.
+By default the picker offers Folioh Pastel with Ink, Jade, Lavender, Peach and Sky. Set `theme.extra_presets: true` to enable the full bundled catalog: six Folioh styles, five Pastel palettes and four Omarchy palettes. An explicitly configured `theme.preset`, project presets and independently registered presets remain selectable without that opt-in.
 
-The catalog stays ordered Folioh, Folioh Pastel and Omarchy, with project presets first when defined. Each opening centers your saved theme and palette, including its customizations. Opening it leaves the applied theme unchanged.
+With extra presets enabled, the catalog stays ordered Folioh, Folioh Pastel and Omarchy, with project presets first when defined. Each opening centers your saved theme and palette, including its customizations. Opening it leaves the applied theme unchanged.
 
-Each swatch applies its variant's colors and default style together. For example, Ballpoint includes its typography, code treatment and corners. A sun or moon marks a fixed light or dark scheme. The final circle, with the adjustments icon, opens Customize. The carousel follows the swatch order through each family, then enters the next family: Typewriter leads to Folioh Pastel's Ink, Jade, Lavender, Peach and Sky, then Catppuccin Latte, and Hackerman wraps to Roller.
+Each swatch applies its variant's colors and default style together. For example, Ballpoint includes its typography, code treatment and corners. A sun or moon marks a fixed light or dark scheme. The final circle, with the adjustments icon, opens Customize. The carousel follows the swatch order through the enabled families and wraps at both ends.
 
 | Input | Action |
 |-------|--------|
@@ -2278,7 +2277,7 @@ The navbars carry no separate light/dark toggle unless `theme.header.theme_toggl
 
 ### Preset Library
 
-Presets keep their existing IDs for `theme.preset`, stored preferences and theme packages. The picker groups them by visible family:
+Presets keep their existing IDs for `theme.preset`, stored preferences and theme packages. The full catalog below requires `theme.extra_presets: true`; the configured site preset and project presets are always available:
 
 | Family | Choices |
 |--------|---------|
@@ -2319,7 +2318,7 @@ Earlier saved styles and palettes still render unchanged and can be adjusted in 
 
 Folioh Pastel is a separate family with preset ID `pastel` and five palettes: Ink (default), Jade, Lavender, Peach and Sky. Each supports light and dark and uses the same organic shapes, Grotesque typography and 0.75rem default radius. Choose a palette from its swatches in T. Jade keeps the original cool paper, petrol ink and pastel fills; older saved Pastel choices without a palette still resolve to Jade.
 
-Pastel’s generated logo and favicon use the same irregular silhouette as its artwork. The mark appears in the navbars, landing footer, demo, picker preview and social images. Page logos follow the reader’s selected theme; the favicon and social images use the site’s configured default. Other themes keep their normal mark. Explicit project logos and favicons retain their own artwork.
+Pastel’s generated logo and favicon use the same irregular silhouette as its artwork. The mark appears in the navbars, landing footer, demo, picker preview and social images. Page logos follow the reader’s selected theme; the favicon and social images use the site’s configured default. Pastel social cards also use the configured light palette and the site’s freehand contours. The generated image is fixed at build time, independent of a reader’s saved theme. Other themes keep their normal mark. Explicit project logos and favicons retain their own artwork.
 
 On desktop the 288 px floating sidebar contains the project branding, search and theme controls. Its header stays attached when scrolling or collapsing the sidebar; the navigation list scrolls independently below the search. Collapsing leaves an 84 px rail with the logo and 44 px controls aligned vertically. The magnifier opens a search panel beside the rail, with matching input and result widths. Escape closes it and returns focus to the magnifier; clicking outside or choosing a result closes it too. Cmd+K or Ctrl+K opens the same panel. The hidden navigation leaves the keyboard tab order until expanded. The desktop table of contents floats beside the article without a background and stays in view while scrolling; long outlines scroll within it. It marks the section in view and shows reading progress where supported. Callouts keep their functional icons on soft asymmetric holders. FeatureCard keeps its named Hugeicons centered over four original organic backgrounds, alternating with the card colors; text/emoji fallback and cards without icons stay unchanged. Shell icons remain unchanged. Decorative corner marks, step tabs and timeline markers use original organic outlines. Code blocks have a file header and language pill, and TerminalSession is a petrol window with three tabs. Pill tabs glide between selections, accordions are soft cards, and light/dark changes reveal the new scheme from the control where supported. Reduced motion removes these transitions. The MDX does not change, and other presets keep their own look.
 
@@ -2802,7 +2801,7 @@ Project metadata shown in the navbar, page titles, and generated output.
 |-------|------|---------|-------------|
 | `name` | `string` | `"Untitled"` | Project name displayed in the navbar and page titles. If missing or empty, a warning is emitted and `"Untitled"` is used. |
 | `version` | `string` | `"0.0.0"` | Version string shown in the docs header. Quote it (`version: "1.0"`): an unquoted `1.0` is a YAML number, not a string, and fails the load. |
-| `repo` | `string` | `""` | URL to the source repository (e.g. GitHub). Used for source links, the navbar repository link, the small Feedback button at the bottom right of docs pages (it opens an issue there with the current page title) and project metadata. Without it, none of these links is shown. |
+| `repo` | `string` | `""` | URL to the source repository (e.g. GitHub). Used for source links, the navbar repository link and project metadata. Feedback requires a separate opt-in through `feedback.enabled`. Without a repository, these links are hidden. |
 | `repo_ref` | `string` | `"main"` | Branch, tag, or commit used for generated source links. |
 | `url` | `string` | `""` | Public site URL for sitemap, canonical metadata, and social previews. It does not control local routing or static asset paths. |
 
@@ -2981,6 +2980,7 @@ Controls the visual appearance of the generated documentation site.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `preset` | `string` | `"pastel"` | Default visual preset for the generated site (Folioh Pastel with Ink). `folioh init` offers `organic-editorial`, `beacon`, `atlas`, `workshop`, and `pastel`; it may also be any built-in id, one a theme package or overlay declares, or a new id that `theme.name`, `theme.tokens` or `theme.style` defines. Anything else stops the build and names the nearest id. |
+| `extra_presets` | `bool` | `false` | Enable the full bundled theme catalog. By default the picker offers Pastel, the configured site preset and project presets; saved disabled themes fall back to the site default. |
 | `dark_mode` | `bool` | `true` | Enable dark mode: the theme picker's Light, Dark and System radios, the toggles `theme.header.theme_toggle` adds, and the `d` key that switches between light and dark themes; `false` keeps the site light, with no mode controls, toggles or `d` shortcut, and `theme.header.theme_toggle` then warns; a dark-only palette the reader applies, such as a dark Omarchy one, still turns the page dark. Must be a YAML boolean; an explicit `null` is an error. |
 | `logo` | `string` | `""` | Path to a logo image shown beside the project name in the docs navbar and the landing navbar, under `deploy.base_path`. Resolved relative to the project directory; a missing file stops the build. |
 | `favicon` | `string` | `""` | Path to a favicon file. Resolved relative to the project directory. |
@@ -3077,6 +3077,31 @@ nav:
   - "Source Code"
   - "Changelog"
 ```
+
+### feedback
+
+Feedback is disabled by default. A repository link alone does not enable it.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | `bool` | `false` | Show the Feedback button on documentation pages. Requires `project.repo` pointing to a GitHub or GitLab repository. |
+
+```yaml
+project:
+  name: "my-library"
+  repo: "https://github.com/org/my-library"
+
+feedback:
+  enabled: true
+```
+
+The floating message icon opens a new issue with the current page title. Its
+Feedback tooltip appears on hover or keyboard focus. The circular control is
+36px on desktop and keeps a 44px target on mobile and touch screens. It follows
+the active theme; reduced-motion preferences disable its hover animation.
+Omitting `feedback`, using an empty mapping, or setting `enabled: false` hides
+both the floating control and the table-of-contents feedback action. A
+configuration change requires restarting `folioh serve`.
 
 ### sidebar
 
@@ -3217,13 +3242,13 @@ folioh validates your config file. A few problems stop the load; everything else
 
 - **Duplicate keys** anywhere in the file fail the load.
 
-- **Typed keys** are checked. String keys such as `project.version` must be quoted YAML strings (`version: "1.0"`); boolean keys (`theme.dark_mode`, `llm.*`, `search.enabled`, `sidebar.default_collapsed`) must be YAML booleans. An explicit `null` on a typed key is an error.
+- **Typed keys** are checked. String keys such as `project.version` must be quoted YAML strings (`version: "1.0"`); boolean keys (`theme.dark_mode`, `theme.extra_presets`, `llm.*`, `search.enabled`, `feedback.enabled`, `sidebar.default_collapsed`) must be YAML booleans. An explicit `null` on a typed key is an error.
 
 - **Missing config file** stops the command with an error naming the path that was expected.
 
-- **Unknown top-level keys** produce a warning listing the unrecognized keys. Core top-level keys are: `project`, `source`, `output`, `public`, `theme`, `template`, `nav`, `sidebar`, `llm`, `search`, `components`, and `deploy`, plus the sections of the built-in integrations: `landing`, `roadmap`, and `openapi`. `versions` and `i18n` are recognised and [ignored with a warning](#versions-and-i18n).
+- **Unknown top-level keys** produce a warning listing the unrecognized keys. Core top-level keys are: `project`, `source`, `output`, `public`, `theme`, `template`, `nav`, `sidebar`, `llm`, `search`, `feedback`, `components`, and `deploy`, plus the sections of the built-in integrations: `landing`, `roadmap`, and `openapi`. `versions` and `i18n` are recognised and [ignored with a warning](#versions-and-i18n).
 
-- **Unknown keys inside a core section** (`project`, `source`, `theme`, `template`, `llm`, `deploy`, `sidebar`, `search`, `components`) produce a warning too, naming the nearest valid key when one is close: `Unknown project keys in docs.yaml: vesion (did you mean 'version'?)`. The `landing`, `roadmap` and `openapi` sections are not checked in this release: a typo there is ignored without a warning. An unknown `source.python.docstring_style` warns and falls back to Google.
+- **Unknown keys inside a core section** (`project`, `source`, `theme`, `template`, `llm`, `deploy`, `sidebar`, `search`, `feedback`, `components`) produce a warning too, naming the nearest valid key when one is close: `Unknown project keys in docs.yaml: vesion (did you mean 'version'?)`. The `landing`, `roadmap` and `openapi` sections are not checked in this release: a typo there is ignored without a warning. An unknown `source.python.docstring_style` warns and falls back to Google.
 
 - **The `plugins:` key** warns with exactly `project plugins are not available in this release; the plugins key is ignored`. The `configKeys` list in the authoring contract (`/_folioh/contract.json`) never includes `plugins`.
 
@@ -6878,6 +6903,7 @@ but with your project's brand, typography, accent, spacing, and header defaults.
 ```yaml
 theme:
   preset: "pastel"
+  extra_presets: false
   dark_mode: true
   logo: "docs/assets/logo.svg"
   favicon: "docs/assets/favicon.ico"
@@ -6886,17 +6912,20 @@ theme:
 | Field | Purpose |
 |-------|---------|
 | `preset` | Default visual preset for the generated site; omitted, Folioh Pastel with Ink. |
+| `extra_presets` | `false` by default: Pastel, the configured site preset and project presets remain selectable. Set `true` to enable the full bundled catalog. |
 | `dark_mode` | `true` (the default) offers light, dark, and system modes through `next-themes`; `false` keeps the site light, unless the reader applies a dark-only palette such as a dark Omarchy one. |
 | `logo` | Copies a project logo into the generated site and shows it beside the project name in the docs and landing navbars. |
 | `favicon` | Copies a project favicon into the generated site. |
 
-`preset` must be a preset the theme picker shows: a
+`preset` must name a
 [built-in id](../components/theme-configurator#preset-library), one a
 [theme package](./theme-packages#register-a-custom-preset) declares, or a new id
 that `theme.name`, `theme.tokens` or `theme.style` defines (see
 [Project Presets](#project-presets)). Any other value stops the build with the
 list of valid ids and the nearest one, so `preset: "beakon"` asks whether you
 meant `beacon`.
+
+The default picker offers Pastel and its five palettes. Extra bundled themes require `theme.extra_presets: true`. A reader’s saved disabled theme falls back to the configured site preset before the page appears. Folioh’s own site keeps extra presets disabled.
 
 Dark mode is enabled by default. When enabled, readers can use the mode radios in
 the theme picker or press `d` outside form fields to switch between light and dark
@@ -7259,6 +7288,12 @@ template before generated content and metadata are injected.
 
 Use a theme package when YAML personalization is too limited, but a full custom
 template would duplicate too much of Folioh's default docs runtime.
+
+Folioh’s own site uses this layer for its Docs/Board product selector. Its
+landing passes a project-owned component into `LandingNavbar`’s
+`productSwitcher` slot. The bundled navbar keeps its original monogram and
+theme gallery, and other sites receive no product links unless their own
+layout supplies the slot.
 
 ## Configure a Package
 

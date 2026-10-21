@@ -25,7 +25,7 @@
 - [FeatureCard and CardGrid](https://folioh.site/docs/components/feature-cards/): Cards for feature overviews, landing pages, and link grids. `FeatureCard` renders a single card with a named icon, title, description, and optional link. `CardGrid` arranges multiple cards in a responsive grid layout.
 - [FileTree](https://folioh.site/docs/components/file-tree/): A visual file and folder tree for showing project structures, directory layouts, and file hierarchies. Parses an indented text string into a tree with folder/file icons, connectors, and proper nesting.
 - [HookMap](https://folioh.site/docs/components/hook-map/): Visualize an extension lifecycle with stage names, hook names, and short descriptions.
-- [Components](https://folioh.site/docs/components/): Reusable MDX components for Folioh documentation pages, including callouts, tabs, previews, diagrams, and API reference helpers.
+- [Components](https://folioh.site/docs/components/): A gallery of the building blocks for your docs. Try an example, then open its guide.
 - [Kbd](https://folioh.site/docs/components/kbd/): A key the reader presses, drawn as a small keycap inside the sentence. Use it for shortcuts and key names. A bare `<kbd>` tag written in a page draws the same way.
 - [Marker](https://folioh.site/docs/components/marker/): A labelled divider: a short line of small text between two dashed rules. Use it to break a long guide into parts ("Advanced", "Since 0.4", "Optional") without adding a heading to the table of contents.
 - [Math (LaTeX)](https://folioh.site/docs/components/math/): Inline and display math rendering via KaTeX. Use `$` for inline expressions and `$$` for centered display equations. Math support is enabled by default — no configuration needed.
