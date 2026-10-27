@@ -24,6 +24,7 @@ pub fn ret(ty: &str, description: &str) -> ReturnIR {
     ReturnIR {
         ty: ty.to_string(),
         description: description.to_string(),
+        ..ReturnIR::default()
     }
 }
 

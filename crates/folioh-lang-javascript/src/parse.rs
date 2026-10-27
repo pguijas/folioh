@@ -312,11 +312,14 @@ fn function(src: &str, start: usize, node: Node, doc: &JsDoc, file: &str) -> Fun
             .child_by_field_name("name")
             .map_or(String::new(), |n| text(src, n).to_string()),
         args: args(src, params, doc),
-        returns: (!doc.returns_type.is_empty() || !doc.returns_description.is_empty()).then(|| {
-            ReturnIR {
-                ty: doc.returns_type.clone(),
-                description: doc.returns_description.clone(),
-            }
+        returns: (doc.is_generator
+            || !doc.returns_type.is_empty()
+            || !doc.returns_description.is_empty())
+        .then(|| ReturnIR {
+            ty: doc.returns_type.clone(),
+            description: doc.returns_description.clone(),
+            is_generator: doc.is_generator,
+            return_annotation: None,
         }),
         raises: doc
             .throws

@@ -460,7 +460,8 @@
         ],
         "returns": {
           "type": "bytes",
-          "description": "Chunks of the body."
+          "description": "Chunks of the body.",
+          "is_generator": true
         },
         "raises": [],
         "decorators": [],
@@ -705,7 +706,8 @@
             ],
             "returns": {
               "type": "Cell",
-              "description": "Each cell in turn."
+              "description": "Each cell in turn.",
+              "is_generator": true
             },
             "raises": [],
             "decorators": [],

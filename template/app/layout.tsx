@@ -1,4 +1,4 @@
-import { siteMetadataUrl } from "@/lib/site-metadata-url"
+import { siteMetadataUrl, siteSocialImagesEnabled } from "@/lib/site-metadata-url"
 import { Bricolage_Grotesque, DM_Sans, Geist, Geist_Mono, Sora, JetBrains_Mono } from "next/font/google"
 import { ThemeStyleBootstrap } from "@/components/theme-configurator"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -95,21 +95,21 @@ export const metadata = {
     ...(rootUrl ? { url: rootUrl } : {}),
     title: projectName,
     description: projectDescription,
-    images: [
+    images: siteSocialImagesEnabled() ? [
       {
         url: rootOgImageUrl,
         width: 1200,
         height: 630,
         alt: projectName,
       },
-    ],
+    ] : [],
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
     title: projectName,
     description: projectDescription,
-    images: [rootOgImageUrl],
+    images: siteSocialImagesEnabled() ? [rootOgImageUrl] : [],
   },
 }
 

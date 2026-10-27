@@ -5,8 +5,18 @@
 pub mod env;
 
 use std::fs;
+use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// An available port for a stubbed serve, independent of other local projects.
+pub fn free_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
 
 /// One finished run of the binary.
 pub struct Run {

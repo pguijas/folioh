@@ -135,7 +135,8 @@ Common override points:
 |------|---------|
 | `app/layout.tsx` | Own font loading, metadata shell, providers, and global layout behavior. |
 | `app/docs/layout.tsx` | Own the docs navbar, sidebar placement, search slot, and ThemeGallery mount. |
-| `components/theme-configurator.tsx` | Replace the bundled theme model, its defaults and its bootstrap with a project-specific implementation. |
+| `components/theme-configurator.tsx` | Own the client theme entry point; existing full replacements retain their bootstrap. |
+| `theme/theme-config.ts` | Own the shared theme model, defaults and bootstrap asset data. This module is used on the server and client; keep browser effects inside functions. |
 | `components/project-header-actions.tsx` | Replace the default generated header action component. |
 | `theme/project-theme.ts` | Own all presets, controls, variants, defaults, and resolved tokens in TypeScript. |
 | `app/globals.css` | Override or replace template-level CSS when a project needs exact visual parity. |

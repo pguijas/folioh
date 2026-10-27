@@ -13,11 +13,11 @@ use crate::re;
 /// One internal link that resolves to nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BrokenLink {
-    /// Route of the page holding the link, e.g. `guide/setup`.
+    /// Source filename when known, otherwise the generated page route.
     pub source_page: String,
     /// The href exactly as written.
     pub target: String,
-    /// 1-based line in the generated `.mdx`.
+    /// 1-based line in that source file or generated `.mdx`.
     pub line_number: usize,
 }
 
@@ -78,32 +78,7 @@ pub fn normalize_target(href: &str, source_route: &str, docs_route_base: &str) -
         });
     }
     let href = href.strip_prefix("./").unwrap_or(href);
-    let mut dir_parts: Vec<&str> = source_route.split('/').collect();
-    dir_parts.pop();
-    if href.starts_with("../") {
-        let mut rest = href;
-        while let Some(stripped) = rest.strip_prefix("../") {
-            rest = stripped;
-            // A `..` above the docs root names no page: the raw target
-            // matches no route, so the link is reported, the same rule
-            // `resolve_href` follows when it leaves such a link as written.
-            if dir_parts.pop().is_none() {
-                return Some(href.to_string());
-            }
-        }
-        let dir = dir_parts.join("/");
-        return Some(match (dir.is_empty(), rest.is_empty()) {
-            (false, false) => format!("{dir}/{rest}"),
-            (false, true) => dir,
-            (true, false) => rest.to_string(),
-            (true, true) => "index".to_string(),
-        });
-    }
-    if dir_parts.is_empty() {
-        Some(href.to_string())
-    } else {
-        Some(format!("{}/{href}", dir_parts.join("/")))
-    }
+    Some(file_relative_route(href, source_route).unwrap_or_else(|| href.to_string()))
 }
 
 /// `docs_route_base` without its trailing `/`; `""` means `/docs`.
@@ -135,7 +110,15 @@ impl Default for LinkPatterns {
 }
 
 /// One href found on a line: where it starts in the line and its text.
+#[derive(Clone, Copy)]
+enum LinkKind {
+    Markdown,
+    Attribute,
+    Property,
+}
+
 struct LinkSpan {
+    kind: LinkKind,
     start: usize,
     /// A markdown destination keeps its title (`./a "Title"`).
     href: String,
@@ -158,15 +141,19 @@ fn link_spans(line: &str, patterns: &LinkPatterns, props: bool) -> Vec<LinkSpan>
         }
         let dest = caps.get(1).unwrap();
         out.push(LinkSpan {
+            kind: LinkKind::Markdown,
             start: dest.start(),
             href: blanked[dest.range()].to_string(),
         });
     }
-    let prop_pattern = props.then_some(&patterns.href_prop);
-    for pattern in std::iter::once(&patterns.href).chain(prop_pattern) {
+    let prop_pattern = props.then_some((&patterns.href_prop, LinkKind::Property));
+    for (pattern, kind) in
+        std::iter::once((&patterns.href, LinkKind::Attribute)).chain(prop_pattern)
+    {
         for caps in pattern.captures_iter(&blanked) {
             if let Some(value) = caps.get(1).or_else(|| caps.get(2)) {
                 out.push(LinkSpan {
+                    kind,
                     start: value.start(),
                     href: blanked[value.range()].to_string(),
                 });
@@ -190,23 +177,8 @@ pub fn links_in_line_with(line: &str, patterns: &LinkPatterns) -> Vec<String> {
         .collect()
 }
 
-/// The site-absolute docs route a relative href names, read against the page
-/// file at `route` the way Markdown reads it (`./a` beside `guide/setup` is
-/// `{base}/guide/a`); `.md`/`.mdx` and a trailing `index` drop, the query and
-/// fragment stay. `None` leaves the href as written: external, site-absolute,
-/// anchor-only, `<...>`, an expression, or a `..` that climbs out of the docs.
-fn resolve_href(href: &str, route: &str, docs_route_base: &str) -> Option<String> {
-    if href.is_empty() || href.starts_with(['/', '#', '?', '<', '{']) {
-        return None;
-    }
-    let (path, suffix) = href.split_at(href.find(['?', '#']).unwrap_or(href.len()));
-    if path
-        .split('/')
-        .next()
-        .is_some_and(|first| first.contains(':'))
-    {
-        return None;
-    }
+/// Canonical file-relative docs path shared by checking and rewriting.
+fn file_relative_route(path: &str, route: &str) -> Option<String> {
     let mut parts: Vec<&str> = route.split('/').collect();
     parts.pop();
     for segment in path.split('/') {
@@ -228,11 +200,36 @@ fn resolve_href(href: &str, route: &str, docs_route_base: &str) -> Option<String
     if parts.last() == Some(&"index") {
         parts.pop();
     }
-    let base = docs_base(docs_route_base);
     Some(if parts.is_empty() {
+        "index".to_string()
+    } else {
+        parts.join("/")
+    })
+}
+
+/// The site-absolute docs route a relative href names, read against the page
+/// file at `route` the way Markdown reads it (`./a` beside `guide/setup` is
+/// `{base}/guide/a`); `.md`/`.mdx` and a trailing `index` drop, the query and
+/// fragment stay. `None` leaves the href as written: external, site-absolute,
+/// anchor-only, `<...>`, an expression, or a `..` that climbs out of the docs.
+fn resolve_href(href: &str, route: &str, docs_route_base: &str) -> Option<String> {
+    if href.is_empty() || href.starts_with(['/', '#', '?', '<', '{']) {
+        return None;
+    }
+    let (path, suffix) = href.split_at(href.find(['?', '#']).unwrap_or(href.len()));
+    if path
+        .split('/')
+        .next()
+        .is_some_and(|first| first.contains(':'))
+    {
+        return None;
+    }
+    let target = file_relative_route(path, route)?;
+    let base = docs_base(docs_route_base);
+    Some(if target == "index" {
         format!("{base}{suffix}")
     } else {
-        format!("{base}/{}{suffix}", parts.join("/"))
+        format!("{base}/{target}{suffix}")
     })
 }
 
@@ -437,3 +434,7 @@ pub fn check_links(input: &LinkCheckInput) -> Vec<BrokenLink> {
 #[cfg(test)]
 #[path = "links_tests.rs"]
 mod tests;
+
+#[path = "links_fragments.rs"]
+mod fragments;
+pub use fragments::check_fragments;

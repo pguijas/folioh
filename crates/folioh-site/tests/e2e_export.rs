@@ -11,7 +11,7 @@ use std::time::Instant;
 
 use folioh_site::builder::SiteBuilder;
 use folioh_site::runtime::NextRuntime;
-use folioh_site::sidebar::{generate_meta_files, SidebarInput, SidebarPage};
+use folioh_site::sidebar::{generate_meta_files, read_directory_orders, SidebarInput, SidebarPage};
 use folioh_site::template::resolve_template_dir;
 
 #[test]
@@ -22,8 +22,76 @@ fn generated_site_example_exports_end_to_end() {
     let project = dir.path().join("generated-site");
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/examples/generated-site");
     folioh_site::fs::copy_tree_all(&source, &project).unwrap();
+    let guides = [
+        (
+            "i18n.md",
+            "Project Languages",
+            "This authored language guide is not an experimental feature.",
+            &["i18n"][..],
+        ),
+        (
+            "versioning.md",
+            "Project Versions",
+            "This authored version guide is not an experimental feature.",
+            &["versioning"][..],
+        ),
+        (
+            "common_errors.md",
+            "Common Errors",
+            "An underscore guide renders its own content.",
+            &["common-errors", "common_errors"][..],
+        ),
+        (
+            "nested_errors/index.md",
+            "Nested Errors",
+            "An underscore directory index renders its own content.",
+            &["nested-errors", "nested_errors"][..],
+        ),
+        (
+            "mixed_folder/quick-start.md",
+            "Mixed Path",
+            "Mixed underscores and hyphens keep their source route.",
+            &[
+                "mixed-folder/quick-start",
+                "mixed_folder/quick-start",
+                "mixed_folder/quick_start",
+            ][..],
+        ),
+        (
+            "api-reference/example_package/module_name.md",
+            "API Names",
+            "API module names retain their underscores.",
+            &["api-reference/example_package/module_name"][..],
+        ),
+    ];
+    for (path, title, body, _) in &guides {
+        common::write(
+            &project.join("docs"),
+            path,
+            &format!("# {title}\n\n{body}\n"),
+        );
+    }
+    // Give the index a visible sibling: Nextra's independent empty-folder
+    // breadcrumb bug must not mask the route-lookup regression.
+    common::write(
+        &project.join("docs"),
+        "nested_errors/recovery.md",
+        "# Recovery\n\nRecovery steps.\n",
+    );
+    let intro = project.join("docs/index.md");
+    std::fs::write(
+        &intro,
+        format!(
+            "{}\n<a data-navigation-probe=\"first\" href=\"/docs/cli/\">CLI navigation probe</a>\n",
+            common::read(&intro)
+        ),
+    )
+    .unwrap();
     let loaded = folioh_config::load_docs_config(&project.join("docs.yaml")).unwrap();
     let mut config = loaded.config;
+    let logo = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"40\" height=\"40\"><circle cx=\"20\" cy=\"20\" r=\"18\" fill=\"#6750a4\"/></svg>";
+    common::write(&project, "assets/logo mark.svg", logo);
+    config.theme.logo = "assets/logo mark.svg".into();
     folioh_plugins::Plugin::configure(
         &folioh_plugins::LandingPlugin,
         &mut config,
@@ -42,6 +110,17 @@ fn generated_site_example_exports_end_to_end() {
     );
     let injection = builder.prepare(true).unwrap();
     assert!(injection.warnings.is_empty(), "{:?}", injection.warnings);
+    // Render the public component through Next, including an arbitrary key.
+    common::write(
+        &build_dir,
+        "app/roadmap-icon-probe/page.tsx",
+        r#"
+import { ProjectIcon } from "@/components/roadmap-header"
+export default function IconProbe() {
+  return <main>{["docs", "orion", "agents"].map(key => <ProjectIcon key={key} projectKey={key} className={`probe-${key}`} />)}</main>
+}
+"#,
+    );
 
     let scan = folioh_mdx::parse_markdown_directory(&project.join("docs"), "").unwrap();
     for page in &scan.pages {
@@ -58,11 +137,13 @@ fn generated_site_example_exports_end_to_end() {
             unlisted: p.unlisted,
         })
         .collect();
+    let orders = read_directory_orders(&config.source.docs).unwrap();
     let meta = generate_meta_files(&SidebarInput {
         nav: &config.nav,
         modules: &[],
         pages: &sidebar_pages,
         default_collapsed: config.sidebar.default_collapsed,
+        directory_orders: &orders,
     });
     for (path, text) in &meta {
         let directory = path.strip_suffix("/_meta.ts").unwrap_or("");
@@ -99,6 +180,31 @@ fn generated_site_example_exports_end_to_end() {
     );
 
     let out = Path::new(&config.output_dir);
+    let probe = common::read(&out.join("roadmap-icon-probe/index.html"));
+    let icons = regex::Regex::new(
+        r#"(?s)<svg\b[^>]*class="[^"]*probe-(docs|orion|agents)[^"]*"[^>]*>(.*?)</svg>"#,
+    )
+    .unwrap();
+    let rendered: std::collections::BTreeMap<_, _> = icons
+        .captures_iter(&probe)
+        .map(|c| (c[1].to_string(), c[2].to_string()))
+        .collect();
+    assert_eq!(rendered.len(), 3, "all project marks must render");
+    assert!(rendered["docs"].contains("M4 2h5l3 3v9H4z") && rendered["docs"].contains("M9 2v3h3"));
+    assert_eq!(rendered["orion"], rendered["agents"]);
+    assert!(
+        rendered["orion"].contains(r#"<circle cx="8" cy="8" r="3.25""#)
+            && !rendered["orion"].contains("<rect")
+    );
+    assert_eq!(common::read(&out.join("logo mark.svg")), logo);
+    let logo_tag = regex::Regex::new(r#"<img\b[^>]*src="[^"]*logo%20mark\.svg"[^>]*>"#).unwrap();
+    for page in ["docs/index.html", "previews/index.html"] {
+        let html = common::read(&out.join(page));
+        assert!(
+            logo_tag.is_match(&html),
+            "project logo is absent from {page}"
+        );
+    }
     for rel in [
         "index.html",
         "docs/index.html",
@@ -116,6 +222,44 @@ fn generated_site_example_exports_end_to_end() {
     ] {
         assert!(out.join(rel).exists(), "missing {rel}");
     }
+    // Every page refers to the same physical, versioned script, including
+    // file:// targets after the export rewriter has rebased their URLs.
+    let boot_tag = regex::Regex::new(
+        r#"(?s)<script\b([^>]*id="theme-configurator-boot"[^>]*)>(.*?)</script>"#,
+    )
+    .unwrap();
+    let boot_src = regex::Regex::new(r#"src="([^"]+)""#).unwrap();
+    let mut shared = None;
+    for page in ["index.html", "docs/index.html", "docs/cli/index.html"] {
+        let html = common::read(&out.join(page));
+        let tag = boot_tag.captures(&html).expect("theme script");
+        assert!(tag[2].is_empty(), "theme payload repeated in {page}");
+        let attrs = boot_src.captures(&tag[1]).unwrap();
+        let src = &attrs[1];
+        assert!(
+            !src.starts_with('/'),
+            "file export needs a relative script: {src}"
+        );
+        let asset = out
+            .join(page)
+            .parent()
+            .unwrap()
+            .join(src)
+            .canonicalize()
+            .unwrap();
+        assert!(asset.is_file() && asset.starts_with(out.canonicalize().unwrap()));
+        assert!(asset
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("bootstrap-"));
+        assert_eq!(asset.extension().unwrap(), "js");
+        assert!(common::read(&asset).contains("const presets ="));
+        if let Some(previous) = &shared {
+            assert_eq!(previous, &asset);
+        }
+        shared = Some(asset);
+    }
     let robots = common::read(&out.join("robots.txt"));
     assert!(
         robots.contains("# llms.txt: /llms.txt\n")
@@ -123,6 +267,32 @@ fn generated_site_example_exports_end_to_end() {
         "{robots}"
     );
     assert_eq!(export.llm_files, ["llms.txt", "llms-full.txt"]);
+    let main = regex::Regex::new(r"(?s)<main\b[^>]*>(.*?)</main>").unwrap();
+    let scripts = regex::Regex::new(r"(?s)<script\b[^>]*>.*?</script>").unwrap();
+    for (mirror, title, body, routes) in guides {
+        for route in routes {
+            let html = common::read(&out.join(format!("docs/{route}/index.html")));
+            assert!(
+                html.contains(&format!("<title>{title} - Example Package</title>")),
+                "wrong rendered title at {route}"
+            );
+            let visible = main
+                .captures(&html)
+                .unwrap_or_else(|| panic!("missing main at {route}"));
+            assert!(
+                scripts.replace_all(&visible[1], "").contains(body),
+                "missing rendered body at {route}"
+            );
+            assert!(
+                html.contains(&format!("_folioh/markdown/{mirror}")),
+                "missing Markdown alternate at {route}"
+            );
+            assert!(out.join(format!("_folioh/markdown/{mirror}")).is_file());
+        }
+    }
+    assert!(!out
+        .join("docs/api-reference/example-package/module-name/index.html")
+        .exists());
     let home = common::read(&out.join("docs/cli/index.html"));
     assert!(home.contains("Example Package") && !home.contains("__PROJECT_NAME__"));
     assert!(
@@ -200,4 +370,25 @@ fn generated_site_example_exports_end_to_end() {
         "x:text-primary-600 no longer renders"
     );
     assert!(build_dir.join(".folioh-build.log").is_file() && !export.output_lines.is_empty());
+    if let Ok(module) = std::env::var("FOLIOH_PLAYWRIGHT_MODULE") {
+        let browser = std::process::Command::new("node")
+            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/browser_navigation.cjs"))
+            .arg(out)
+            .arg("fixture")
+            .env("FOLIOH_PLAYWRIGHT_MODULE", module)
+            .output()
+            .expect("Playwright driver starts");
+        assert!(
+            browser.status.success(),
+            "browser regression failed:\n{}\n{}",
+            String::from_utf8_lossy(&browser.stdout),
+            String::from_utf8_lossy(&browser.stderr)
+        );
+        eprintln!(
+            "Browser navigation: {}",
+            String::from_utf8_lossy(&browser.stdout)
+        );
+    } else {
+        eprintln!("Playwright navigation not run: set FOLIOH_PLAYWRIGHT_MODULE to its installed module path.");
+    }
 }

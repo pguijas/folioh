@@ -26,6 +26,7 @@ export async function fetchData(url, ...options) {
 
 /**
  * Yields integers in a range.
+ * @yields {number} Each integer.
  * @param {number} start - Start value.
  * @param {number} end - End value (exclusive).
  */

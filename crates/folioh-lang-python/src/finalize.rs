@@ -122,13 +122,17 @@ fn finalize_function(raw: FunctionRaw, style: DocstringStyle) -> FunctionIR {
         None
     } else {
         let doc = parsed.returns.as_ref();
+        let is_generator = doc.is_some_and(|r| r.is_generator);
         Some(ReturnIR {
-            ty: if raw.returns_annotation.is_empty() {
+            return_annotation: (is_generator && !raw.returns_annotation.is_empty())
+                .then(|| raw.returns_annotation.clone()),
+            ty: if is_generator || raw.returns_annotation.is_empty() {
                 doc.and_then(|r| r.type_name.clone()).unwrap_or_default()
             } else {
                 raw.returns_annotation
             },
             description: doc.map(|r| r.description.clone()).unwrap_or_default(),
+            is_generator,
         })
     };
     let raises = parsed

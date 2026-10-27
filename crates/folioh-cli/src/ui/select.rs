@@ -3,7 +3,9 @@
 //! not a terminal, and the news ticker that refreshes the banner's news line
 //! in place while a prompt is open.
 
-use std::io::{self, BufRead, IsTerminal, Write};
+#[cfg(any(not(unix), test))]
+use std::io::BufRead;
+use std::io::{self, IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
@@ -15,6 +17,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 use super::banner::{news_line, FOLIOH_NEWS_STYLE};
 use super::text::{cell_len, paint, Colors, BOLD, BOLD_CYAN, DIM, RED};
 use super::Ui;
+use crate::signals::StopSignals;
 
 /// SGR reset.
 pub const RESET: &str = "\x1b[0m";
@@ -351,9 +354,17 @@ pub fn map_key(key: KeyEvent) -> Key {
 }
 
 /// One key from the terminal (raw mode only while waiting, like readchar).
-pub fn read_key() -> Key {
+pub fn read_key(interrupt: &StopSignals) -> Key {
     let _raw = RawMode::enable();
     loop {
+        if interrupt.exit_code().is_some() {
+            return Key::Cancel;
+        }
+        match event::poll(Duration::from_millis(50)) {
+            Ok(false) => continue,
+            Err(_) => return Key::Cancel,
+            Ok(true) => {}
+        }
         match event::read() {
             Ok(Event::Key(key)) if key.kind != KeyEventKind::Release => return map_key(key),
             Ok(_) => continue,
@@ -423,8 +434,16 @@ pub fn map_line_key(key: KeyEvent, line_is_empty: bool) -> LineKey {
     }
 }
 
-fn read_line_key(line_is_empty: bool) -> LineKey {
+fn read_line_key(line_is_empty: bool, interrupt: &StopSignals) -> LineKey {
     loop {
+        if interrupt.exit_code().is_some() {
+            return LineKey::Cancel;
+        }
+        match event::poll(Duration::from_millis(50)) {
+            Ok(false) => continue,
+            Err(_) => return LineKey::Cancel,
+            Ok(true) => {}
+        }
         match event::read() {
             Ok(Event::Key(key)) if key.kind != KeyEventKind::Release => {
                 return map_line_key(key, line_is_empty);
@@ -438,18 +457,69 @@ fn read_line_key(line_is_empty: bool) -> LineKey {
 /// The answer typed at a terminal, read under raw mode so Ctrl-C cancels
 /// the prompt (and init prints `^C Init aborted.`) instead of killing the
 /// process.
-pub fn read_terminal_line(out: &mut dyn Write) -> Result<String, Cancelled> {
+pub fn read_terminal_line(
+    out: &mut dyn Write,
+    interrupt: &StopSignals,
+) -> Result<String, Cancelled> {
     let _raw = RawMode::enable();
-    assemble_line(out, &mut |line| read_line_key(line.is_empty()))
+    assemble_line(out, &mut |line| read_line_key(line.is_empty(), interrupt))
 }
 
 /// One line of piped stdin; EOF cancels as [`Cancelled::InputClosed`].
+#[cfg(any(not(unix), test))]
 pub fn read_piped_line(input: &mut dyn BufRead) -> Result<String, Cancelled> {
     let mut line = String::new();
     match input.read_line(&mut line) {
         Ok(0) | Err(_) => Err(Cancelled::InputClosed),
         Ok(_) => Ok(line),
     }
+}
+
+/// Read a pipe without holding a blocking buffered read across a signal.
+/// One byte at a time leaves subsequent answers in the OS pipe, so each
+/// prompt can poll the same stdin without losing buffered input.
+#[cfg(unix)]
+fn read_stdin_line(interrupt: &StopSignals) -> Result<String, Cancelled> {
+    let mut bytes = Vec::new();
+    loop {
+        if interrupt.exit_code().is_some() {
+            return Err(Cancelled::ByUser);
+        }
+        let mut fd = libc::pollfd {
+            fd: libc::STDIN_FILENO,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // stdin is borrowed, never closed; only this prompt reads it. poll
+        // bounds the wait, and read consumes at most one available byte.
+        let ready = unsafe { libc::poll(&mut fd, 1, 50) };
+        if ready == 0 {
+            continue;
+        }
+        if ready < 0 {
+            if io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(Cancelled::InputClosed);
+        }
+        let mut byte = 0u8;
+        match unsafe { libc::read(libc::STDIN_FILENO, (&mut byte as *mut u8).cast(), 1) } {
+            1 => {
+                bytes.push(byte);
+                if byte != b'\n' {
+                    continue;
+                }
+            }
+            0 if !bytes.is_empty() => {}
+            _ => return Err(Cancelled::InputClosed),
+        }
+        return String::from_utf8(bytes).map_err(|_| Cancelled::InputClosed);
+    }
+}
+
+#[cfg(not(unix))]
+fn read_stdin_line(_interrupt: &StopSignals) -> Result<String, Cancelled> {
+    read_piped_line(&mut io::stdin().lock())
 }
 
 /// The numbered prompt (rich `Prompt.ask`) for piped or `CI` runs. Accepts
@@ -510,10 +580,12 @@ pub fn numbered_choice(
 
 /// Ask through the arrow menu when the terminal allows it, else numbered:
 /// typed at the terminal under raw mode, or one line per answer from a pipe.
+#[allow(clippy::too_many_arguments)]
 pub fn ask_choice(
     ui: &Ui,
     ticker: Option<&NewsTicker>,
     arrow: bool,
+    interrupt: &StopSignals,
     title: &str,
     options: &[Choice],
     default: &str,
@@ -522,18 +594,17 @@ pub fn ask_choice(
     if arrow {
         arrow_choice(
             &mut io::stdout(),
-            &mut read_key,
+            &mut || read_key(interrupt),
             ticker,
             title,
             options,
             default,
         )
     } else if io::stdin().is_terminal() {
-        let mut read = || read_terminal_line(&mut io::stdout());
+        let mut read = || read_terminal_line(&mut io::stdout(), interrupt);
         numbered_choice(ui, &mut read, title, options, default, title_style)
     } else {
-        let mut stdin = io::stdin().lock();
-        let mut read = || read_piped_line(&mut stdin);
+        let mut read = || read_stdin_line(interrupt);
         numbered_choice(ui, &mut read, title, options, default, title_style)
     }
 }

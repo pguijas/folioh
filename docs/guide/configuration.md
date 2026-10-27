@@ -201,6 +201,8 @@ deploy:
 
 Not available in this release; ignored with a warning. A project can keep
 either key in `docs.yaml`: the build warns and carries on without it.
+These configuration gates do not reserve documentation routes: authored pages
+named `i18n.md` or `versioning.md` publish normally.
 
 ### output
 
@@ -234,13 +236,16 @@ A file that does not exist fails the build with `public file not found: <absolut
 
 Controls the visual appearance of the generated documentation site.
 
+Generated Pastel social images use the project-name monogram on root and docs
+cards, independently of desktop fonts installed on the build host.
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `preset` | `string` | `"pastel"` | Default visual preset for the generated site (Folioh Pastel with Ink). `folioh init` offers `organic-editorial`, `beacon`, `atlas`, `workshop`, and `pastel`; it may also be any built-in id, one a theme package or overlay declares, or a new id that `theme.name`, `theme.tokens` or `theme.style` defines. Anything else stops the build and names the nearest id. |
 | `extra_presets` | `bool` | `false` | Enable the full bundled theme catalog. By default the picker offers Pastel, the configured site preset and project presets; saved disabled themes fall back to the site default. |
 | `dark_mode` | `bool` | `true` | Enable dark mode: the theme picker's Light, Dark and System radios, the toggles `theme.header.theme_toggle` adds, and the `d` key that switches between light and dark themes; `false` keeps the site light, with no mode controls, toggles or `d` shortcut, and `theme.header.theme_toggle` then warns; a dark-only palette the reader applies, such as a dark Omarchy one, still turns the page dark. Must be a YAML boolean; an explicit `null` is an error. |
-| `logo` | `string` | `""` | Path to a logo image shown beside the project name in the docs navbar and the landing navbar, under `deploy.base_path`. Resolved relative to the project directory; a missing file stops the build. |
-| `favicon` | `string` | `""` | Path to a favicon file. Resolved relative to the project directory. |
+| `logo` | `string` | `""` | Path to a logo image shown beside the project name in the docs, landing and previews navbars, under `deploy.base_path`. Resolved relative to the project directory; a missing file stops the build. |
+| `favicon` | `string` | `""` | Path to a favicon file. Resolved relative to the project directory; a missing file stops the build and reports the requested path. |
 | `name` | `string` | `""` | Optional project preset display name. When set with project theme data, Folioh adds a Project group to the theme picker. |
 | `description` | `string` | `""` | Optional project preset description. |
 | `preview` | `mapping` | `{}` | Optional `light` and `dark` swatch colors for the project preset preview. |
@@ -294,6 +299,9 @@ static export pipeline. See [Custom Templates](./theming/custom-templates) for
 the full contract and required file structure.
 
 ### search
+
+The 404 page offers the same search when its index is available. Setting
+`search.enabled: false` also hides this control; missing pages remain noindex.
 
 Controls the built-in full-text search powered by [Pagefind](https://pagefind.app). Search is enabled by default, appears in the docs navbar, and opens with `Cmd+K` on macOS or `Ctrl+K` on Windows/Linux.
 
@@ -389,6 +397,35 @@ export default {
 This applies to generated guide folders and API reference folder groups. It does not
 change the route for folder index pages, and it does not collapse individual leaf
 pages.
+
+#### Directory page order
+
+Put `_meta.yaml` beside a directory’s pages to order its immediate children:
+
+```yaml filename="docs/advanced/_meta.yaml"
+order:
+  - index
+  - quickstart
+  - configuration
+  - examples
+```
+
+Use child route names without `.md`, such as `quickstart` or the folder name
+`examples`. `README` refers to `index`. A nested folder owns its own order and
+does not need an index page. Names listed here come first; other children keep
+their deterministic discovery order. Missing future pages are skipped.
+
+Titles still come from frontmatter or the first H1. Unlisted pages and nested
+index pages stay hidden. Metadata can also order plugin pages and
+generated API folders by placing the file at the corresponding route directory
+under a `source.docs` root, for example `docs/api-reference/mylib/_meta.yaml`.
+The root directory’s order applies before `docs.yaml` `nav`.
+
+`build` rereads these files on warm builds. `serve` applies edits, additions and
+removals without restarting. Invalid metadata reports its source filename;
+unknown keys, non-string or duplicate entries, paths and Markdown file extensions are
+errors. Two documentation roots declaring the same route directory’s order are
+also an error.
 
 ### llm
 
@@ -588,3 +625,8 @@ nav:
   - "Guide"
   - "FAQ"
 ```
+
+The component catalog and default landing links follow `template.docs_route_base`.
+The default API entry appears when a generated reference index is published;
+explicitly configured landing routes keep their destinations. Relative guide
+links are checked against the same file-relative paths used in rendered pages.

@@ -55,7 +55,8 @@ fn preview_metadata_uses_each_sites_deploy_path() {
     let Some(value) = driver_json(
         dir.path(),
         r#"
-const { siteMetadataUrl } = await import(process.argv[2])
+const { siteMetadataUrl, siteSocialImagesEnabled } = await import(process.argv[2])
+delete process.env.FOLIOH_EXAMPLE_SITE_URL
 delete process.env.FOLIOH_PREVIEW_URL
 delete process.env.NEXT_PUBLIC_FOLIOH_BASE_PATH
 const results = [siteMetadataUrl("https://site.example/"), siteMetadataUrl("")]
@@ -65,6 +66,14 @@ for (const path of ["/previews/pr-1", "/previews/pr-1/_previews/example", ""]) {
   process.env.NEXT_PUBLIC_FOLIOH_BASE_PATH = path
   results.push(siteMetadataUrl("https://site.example"))
 }
+delete process.env.FOLIOH_PREVIEW_URL
+process.env.FOLIOH_EXAMPLE_SITE_URL = "https://parent.example/ignored-config-path"
+process.env.NEXT_PUBLIC_FOLIOH_BASE_PATH = "/project/_folioh/examples/demo"
+results.push(siteMetadataUrl("https://standalone.example"), siteSocialImagesEnabled())
+process.env.FOLIOH_EXAMPLE_SITE_URL = ""
+results.push(siteMetadataUrl("https://standalone.example"), siteSocialImagesEnabled())
+process.env.FOLIOH_PREVIEW_URL = "https://preview.example/previews/pr-1"
+results.push(siteMetadataUrl(""), siteSocialImagesEnabled())
 console.log(JSON.stringify(results))
 "#,
         &helper,
@@ -79,7 +88,13 @@ console.log(JSON.stringify(results))
             "https://dev.example/previews/pr-1",
             "https://dev.example/previews/pr-1",
             "https://dev.example/previews/pr-1/_previews/example",
-            "https://dev.example"
+            "https://dev.example",
+            "https://parent.example/project/_folioh/examples/demo",
+            true,
+            "",
+            false,
+            "https://preview.example/project/_folioh/examples/demo",
+            true
         ])
     );
 }
@@ -93,7 +108,7 @@ fn docs_route_params_expand_index_html_and_underscore_aliases() {
     let helper_url = format!("file://{}", helper.display());
     let script = format!(
         r##"
-import {{ expandStaticParams, isDisabledMdxPath, isUnderscoreAlias, normalizeMdxPath }} from {helper_url:?}
+import {{ expandStaticParams, isDisabledMdxPath, isUnderscoreAlias, normalizeMdxPath, resolveMdxPath }} from {helper_url:?}
 const assert = (condition, message) => {{ if (!condition) throw new Error(message) }}
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 assert(same(normalizeMdxPath(["index.html"]), []), "index.html should resolve to the docs root")
@@ -104,7 +119,7 @@ assert(same(normalizeMdxPath(["api-reference", "example_package", "module_name"]
 assert(isUnderscoreAlias(["source", "common_errors"]) && isUnderscoreAlias(["source", "common_errors", "index.html"]), "underscore paths are aliases")
 assert(!isUnderscoreAlias(["source", "common-errors"]) && !isUnderscoreAlias([]) && !isUnderscoreAlias(undefined), "hyphenated paths and the root are not aliases")
 assert(!isUnderscoreAlias(["api-reference", "example_package"]), "API reference names are not aliases")
-assert(isDisabledMdxPath(["i18n"]) && isDisabledMdxPath(["i18n", "index.html"]) && isDisabledMdxPath(["versioning"]), "gated routes are recognized")
+assert(!isDisabledMdxPath(["i18n"]) && !isDisabledMdxPath(["i18n", "index.html"]) && !isDisabledMdxPath(["versioning"]), "authored pages are never gated by their route name")
 for (const path of [["configuration"], ["roadmap"], ["landing"], ["plugins"], ["api-reference", "folioh", "plugins", "roadmap"]]) {{
   assert(!isDisabledMdxPath(path), `released route must not be gated: ${{path.join("/")}}`)
 }}
@@ -120,14 +135,30 @@ assert(has(["source", "common_errors"]), "underscore aliases should be included 
 assert(has(["source", "common_errors", "index.html"]), "underscore index.html aliases should be included")
 assert(!has(["api-reference", "example-package"]), "API reference static params should not get hyphenated aliases")
 assert(has(["guide", "index.html"], (p) => p.lang === "en"), "locale params should keep their non-route fields on aliases")
-assert(has(["i18n"]) && has(["i18n", "index.html"]) && has(["versioning"]), "disabled routes are included for dev export requests")
+assert(!has(["i18n"]) && !has(["versioning"]), "development does not invent routes missing from the project")
 const production = expandStaticParams(
-  [{{ mdxPath: [""] }}, {{ mdxPath: ["components"] }}, {{ mdxPath: ["source", "common-errors"] }}],
+  [{{ mdxPath: [""] }}, {{ mdxPath: ["components"] }}, {{ mdxPath: ["source", "common-errors"] }}, {{ mdxPath: ["i18n"] }}, {{ mdxPath: ["versioning"] }}],
   {{ includeIndexHtmlAliases: false, includeDisabledParams: false }},
 )
 assert(!production.some((p) => p.mdxPath.includes("index.html")), "index.html aliases stay out of production exports")
-assert(!production.some((p) => p.mdxPath.includes("i18n")), "disabled params stay out of production exports")
+assert(production.some((p) => same(p.mdxPath, ["i18n"])) && production.some((p) => same(p.mdxPath, ["versioning"])), "project guides named after disabled features are exported")
 assert(production.some((p) => same(p.mdxPath, ["source", "common_errors"])), "underscore aliases are generated for static exports")
+const content = [{{ mdxPath: [""] }}, {{ mdxPath: ["common_errors"] }}, {{ mdxPath: ["mixed_folder", "quick-start"] }}, {{ mdxPath: ["api-reference", "example_package"] }}]
+assert(same(resolveMdxPath(["common-errors"], content), ["common_errors"]), "canonical URLs import the real underscore content route")
+assert(same(resolveMdxPath(["common_errors", "index.html"], content), ["common_errors"]), "index.html aliases import the same content")
+assert(same(resolveMdxPath(["mixed-folder", "quick-start"], content), ["mixed_folder", "quick-start"]), "mixed source spellings are preserved for imports")
+assert(same(resolveMdxPath(["api-reference", "example_package"], content), ["api-reference", "example_package"]), "API imports keep their underscores")
+assert(same(resolveMdxPath([], content), []), "root imports use an empty path")
+assert(same(resolveMdxPath(["missing_page"], content), ["missing-page"]), "unknown paths keep normal not-found lookup")
+const mixed = expandStaticParams(content, {{ includeIndexHtmlAliases: true, includeDisabledParams: false }})
+assert(mixed.some((p) => same(p.mdxPath, ["mixed_folder", "quick-start"])), "source/sidebar URLs are exported too")
+assert(mixed.some((p) => same(p.mdxPath, ["mixed_folder", "quick-start", "index.html"])), "source URLs compose with dev index aliases")
+const collision = [{{ mdxPath: ["common_errors"] }}, {{ mdxPath: ["common-errors"] }}]
+for (const run of [() => expandStaticParams(collision), () => resolveMdxPath(["common-errors"], collision)]) {{
+  let error
+  try {{ run() }} catch (caught) {{ error = caught }}
+  assert(error?.message.includes('Conflicting docs routes "common_errors" and "common-errors"'), "ambiguous aliases fail instead of hiding a source page")
+}}
 "##
     );
     if let Err(Some(stderr)) = run_node(
@@ -524,7 +555,14 @@ for (const seed of ["docs", "", "api/café🧭", "a", "b", "c", "d", "e", "f"]) 
 }
 artworkCheck(!same(pastelShapes("a"), pastelShapes("b")), "different routes vary the Pastel composition")
 const markup = renderToStaticMarkup(createElement(model.ThemeStyleBootstrap))
-const bootstrap = markup.match(/<script[^>]*>([\s\S]*?)<\/script>/)[1]
+const tag = markup.match(/<script[^>]*id="theme-configurator-boot"[^>]*>([\s\S]*?)<\/script>/)
+if (!tag || tag[1] !== "" || !tag[0].includes('src="')) throw new Error("bootstrap must use an external script")
+const asset = await load("app/%5Ffolioh/theme/[file]/route.ts")
+const response = asset.GET()
+const bootstrap = await response.text()
+const filename = asset.generateStaticParams()[0].file
+if (!tag[0].includes(`/_folioh/theme/${filename}`) || !response.headers.get("cache-control").includes("immutable")) throw new Error("shared bootstrap must be content-versioned and cacheable")
+if (markup.includes("const presets =")) throw new Error("page repeats the preset payload")
 const element = { textContent: "" }
 globalThis.document = {
   documentElement: { dataset: {}, style: {}, classList: { add() {}, remove() {} } },
@@ -771,7 +809,14 @@ window.dispatchEvent = () => {}
 const element = { textContent: "" }
 globalThis.document = { documentElement: { dataset: {}, style: {}, classList: { add() {}, remove() {} } }, querySelectorAll: () => [element] }
 const markup = renderToStaticMarkup(createElement(model.ThemeStyleBootstrap))
-const bootstrap = markup.match(/<script[^>]*>([\s\S]*?)<\/script>/)[1]
+const tag = markup.match(/<script[^>]*id="theme-configurator-boot"[^>]*>([\s\S]*?)<\/script>/)
+if (!tag || tag[1] !== "" || !tag[0].includes('src="')) throw new Error("bootstrap must use an external script")
+const asset = await load("app/%5Ffolioh/theme/[file]/route.ts")
+const response = asset.GET()
+const bootstrap = await response.text()
+const filename = asset.generateStaticParams()[0].file
+if (!tag[0].includes(`/_folioh/theme/${filename}`) || !response.headers.get("cache-control").includes("immutable")) throw new Error("shared bootstrap must be content-versioned and cacheable")
+if (markup.includes("const presets =")) throw new Error("page repeats the preset payload")
 const restored = Object.fromEntries(["omarchy", "pastel", DEFAULT_CONFIG.presetId, "beacon"].map((id) => {
   const config = configForPreset(DEFAULT_CONFIG, id, id === "pastel" ? { palette: "sky" } : undefined)
   config.customization.fontId = "mono"
@@ -790,6 +835,8 @@ console.log(JSON.stringify({
   ids: SELECTABLE_PRESETS.map((preset) => preset.id).sort(),
   families: listThemes().map((family) => family.name),
   variants: themeVariants(SELECTABLE_PRESETS).map(({ preset, option }) => `${preset.id}:${option?.value ?? ""}`),
+  bootstrapFile: filename,
+  bootstrapBytes: new TextEncoder().encode(bootstrap).length,
   defaultId: DEFAULT_CONFIG.presetId,
   defaultFont: DEFAULT_CONFIG.customization.fontId,
   restored,
@@ -1030,6 +1077,11 @@ fn the_default_catalog_limits_selection_and_saved_themes() {
     assert_eq!(default["restored"]["pastel"]["palette"], "sky");
 
     let all = theme_driver(None, THEME_CATALOG_DRIVER, true).unwrap();
+    assert_ne!(
+        default["bootstrapFile"], all["bootstrapFile"],
+        "a catalog change must invalidate the cached asset"
+    );
+    assert!(default["bootstrapBytes"].as_u64().unwrap() < all["bootstrapBytes"].as_u64().unwrap());
     for key in ["read", "boot", "saved"] {
         assert_eq!(all["restored"]["omarchy"][key], "omarchy");
     }

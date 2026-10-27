@@ -1,0 +1,19 @@
+order:
+  - index
+  - introduction
+  - why-folioh
+  - installation
+  - quickstart
+  - configuration
+  - cli
+  - languages
+  - docstrings
+  - components
+  - theming
+  - deployment
+  - plugins
+  - migration
+  - troubleshooting
+  - architecture
+  - developing
+  - contributing

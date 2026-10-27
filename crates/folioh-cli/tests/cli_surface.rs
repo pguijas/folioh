@@ -393,13 +393,96 @@ llm:
 }
 
 #[test]
+fn init_only_asks_about_docstrings_when_python_is_detected() {
+    for (language, files, answers, has_python) in [
+        (
+            "rust",
+            vec![
+                (
+                    "Cargo.toml",
+                    "[package]\nname = \"demo\"\nversion = \"1.0.0\"\n",
+                ),
+                ("src/lib.rs", "//! Demo.\n"),
+            ],
+            "2\n",
+            false,
+        ),
+        (
+            "javascript",
+            vec![
+                ("package.json", "{\"name\":\"demo\"}"),
+                ("src/index.js", "export const x = 1;\n"),
+            ],
+            "2\n",
+            false,
+        ),
+        ("python", vec![("src/demo.py", "x = 1\n")], "2\n2\n", true),
+        (
+            "mixed",
+            vec![
+                ("src/demo.py", "x = 1\n"),
+                (
+                    "Cargo.toml",
+                    "[package]\nname = \"demo\"\nversion = \"1.0.0\"\n",
+                ),
+                ("src/lib.rs", "//! Demo.\n"),
+            ],
+            "2\n2\n",
+            true,
+        ),
+        ("empty", vec![], "2\n", false),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, contents) in files {
+            let path = dir.path().join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, contents).unwrap();
+        }
+        let result = folioh_run(dir.path(), &["init"], Some(answers));
+        assert_eq!(
+            result.code, 0,
+            "{language}: {}{}",
+            result.stdout, result.stderr
+        );
+        assert_eq!(
+            result.stdout.contains("Docstring style"),
+            has_python,
+            "{language}"
+        );
+        let config = yaml(&dir.path().join("docs.yaml"));
+        assert_eq!(
+            config["theme"]["preset"].as_str(),
+            Some("beacon"),
+            "{language}"
+        );
+        assert_eq!(
+            config["source"]["python"]["docstring_style"].as_str(),
+            has_python.then_some("numpy"),
+            "{language}"
+        );
+
+        fs::remove_file(dir.path().join("docs.yaml")).unwrap();
+        let defaults = folioh_run(dir.path(), &["init", "--yes"], None);
+        assert_eq!(
+            defaults.code, 0,
+            "{language}: {}{}",
+            defaults.stdout, defaults.stderr
+        );
+        assert!(!defaults.stdout.contains("Docstring style"));
+        let config = yaml(&dir.path().join("docs.yaml"));
+        assert_eq!(config["theme"]["preset"].as_str(), Some("pastel"));
+        assert!(config["source"]["python"].get("docstring_style").is_none());
+    }
+}
+
+#[test]
 fn init_with_piped_answers_uses_the_numbered_prompts() {
     let dir = tempfile::tempdir().unwrap();
     let cwd = dir.path();
 
-    // Defaults: Enter twice.
+    // Without Python, Enter accepts only the visual preset default.
     fs::create_dir(cwd.join("a")).unwrap();
-    let result = folioh_run(cwd, &["init", "a"], Some("\n\n"));
+    let result = folioh_run(cwd, &["init", "a"], Some("\n"));
     assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
     let out = &result.stdout;
     assert!(out.contains(BANNER_LINE));
@@ -418,7 +501,7 @@ fn init_with_piped_answers_uses_the_numbered_prompts() {
     ] {
         assert!(out.contains(row), "{row}");
     }
-    let prompts = "\n  Docstring style\n  1. Google\n     Google-style Args, Returns, and Raises sections.\n  2. NumPy\n     NumPy/SciPy-style parameter tables.\n  3. Auto-detect (default)\n     Let Folioh choose the parser.\n  Select (3): \n  Visual preset\n  1. Roller\n     Fine headings, generous spacing, and cobalt ink.\n  2. Beacon\n     Bright product docs with clear contrast.\n  3. Letterpress\n     Bold serif headings on a paper surface.\n  4. Notebook\n     Framed pages with warm surfaces and green accents.\n  5. Folioh Pastel (default)\n     Pen-blue ink, soft colours, and organic shapes.\n  Select (5): \n  ✔ Created a/docs.yaml\n  ✔ Created a/docs/index.md\n  ✔ Created a/.github/workflows/pages.yml\n  ✔ Created a/.github/workflows/branch-previews.yml\n  Next folioh serve a\n";
+    let prompts = "\n  Visual preset\n  1. Roller\n     Fine headings, generous spacing, and cobalt ink.\n  2. Beacon\n     Bright product docs with clear contrast.\n  3. Letterpress\n     Bold serif headings on a paper surface.\n  4. Notebook\n     Framed pages with warm surfaces and green accents.\n  5. Folioh Pastel (default)\n     Pen-blue ink, soft colours, and organic shapes.\n  Select (5): \n  ✔ Created a/docs.yaml\n  ✔ Created a/docs/index.md\n  ✔ Created a/.github/workflows/pages.yml\n  ✔ Created a/.github/workflows/branch-previews.yml\n  Next folioh serve a\n";
     assert!(out.ends_with(prompts), "{out}");
     assert!(!out.contains("Ready"), "compact output, no panel");
     assert!(!out.contains("🏠 Starter landing page"));
@@ -445,7 +528,7 @@ fn init_with_piped_answers_uses_the_numbered_prompts() {
 
     // An answer by value, and an invalid answer that is asked again.
     fs::create_dir(cwd.join("c")).unwrap();
-    let result = folioh_run(cwd, &["init", "c"], Some("google\nnope\n4\n"));
+    let result = folioh_run(cwd, &["init", "c"], Some("nope\nworkshop\n"));
     assert_eq!(result.code, 0, "{}", result.stdout);
     assert!(result
         .stdout
@@ -461,7 +544,7 @@ fn init_with_piped_answers_uses_the_numbered_prompts() {
 
     // Roller remains available as an explicit choice at its original number.
     fs::create_dir(cwd.join("roller")).unwrap();
-    let result = folioh_run(cwd, &["init", "roller"], Some("\n1\n"));
+    let result = folioh_run(cwd, &["init", "roller"], Some("1\n"));
     assert_eq!(result.code, 0, "{}{}", result.stdout, result.stderr);
     assert_eq!(
         yaml(&cwd.join("roller/docs.yaml"))["theme"]["preset"].as_str(),
@@ -475,7 +558,7 @@ fn init_with_piped_answers_uses_the_numbered_prompts() {
     assert!(
         result
             .stdout
-            .ends_with("  Select (3): \nInit aborted: stdin ended before an answer. No files changed; rerun with --yes to take the defaults.\n"),
+            .ends_with("  Select (5): \nInit aborted: stdin ended before an answer. No files changed; rerun with --yes to take the defaults.\n"),
         "{}",
         result.stdout
     );
@@ -484,10 +567,7 @@ fn init_with_piped_answers_uses_the_numbered_prompts() {
 
     // `CI` set with a terminal would also take this path; piped stdin already does.
     fs::create_dir(cwd.join("e")).unwrap();
-    let result = run(
-        folioh(cwd).args(["init", "e"]).env("CI", "1"),
-        Some("\n2\n"),
-    );
+    let result = run(folioh(cwd).args(["init", "e"]).env("CI", "1"), Some("2\n"));
     assert_eq!(result.code, 0);
     assert_eq!(
         yaml(&cwd.join("e/docs.yaml"))["theme"]["preset"].as_str(),
@@ -501,7 +581,7 @@ fn init_prints_created_paths_relative_to_the_current_directory() {
     let cwd = dir.path();
     fs::create_dir_all(cwd.join("tmp/sample-init-check")).unwrap();
 
-    let result = folioh_run(cwd, &["init", "tmp/sample-init-check"], Some("\n2\n"));
+    let result = folioh_run(cwd, &["init", "tmp/sample-init-check"], Some("2\n"));
     assert_eq!(result.code, 0, "{}", result.stdout);
     assert!(result
         .stdout

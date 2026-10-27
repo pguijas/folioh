@@ -1,11 +1,10 @@
-//! Release gates on published pages as data: which doc routes and API modules
-//! stay out of the site, llms output and search until `FOLIOH_EXPERIMENTAL`
-//! names their feature.
+//! Release gates on generated API modules. Authored documentation is never
+//! hidden by its route name; experimental features are gated in configuration.
 
 use folioh_config::EXPERIMENTAL_ENV_VAR;
 
-/// Doc route -> the feature that gates it.
-pub const DISABLED_DOC_ROUTES: [(&str, &str); 2] = [("i18n", "i18n"), ("versioning", "versions")];
+/// Doc route -> the feature that gates it. Authored routes are not reserved.
+pub const DISABLED_DOC_ROUTES: [(&str, &str); 0] = [];
 /// Module prefix -> the feature that gates it (and its submodules). Empty this release.
 pub const DISABLED_API_MODULES: [(&str, &str); 0] = [];
 

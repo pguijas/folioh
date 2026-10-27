@@ -571,7 +571,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-cli"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "anstream",
  "anstyle",
@@ -585,13 +585,16 @@ dependencies = [
  "folioh-plugins",
  "folioh-site",
  "folioh-watch",
+ "fs4",
  "jiff",
+ "libc",
  "regex",
  "semver",
  "serde",
  "serde_json",
  "serde_yaml_ng",
  "sha2",
+ "signal-hook",
  "tempfile",
  "thiserror",
  "toml",
@@ -600,7 +603,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-config"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "indexmap",
  "jiff",
@@ -613,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-docs"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "folioh-config",
  "folioh-ir",
@@ -630,7 +633,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-ir"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "regex",
  "serde",
@@ -640,7 +643,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-lang-javascript"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "folioh-ir",
  "serde_json",
@@ -652,7 +655,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-lang-python"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "criterion",
  "folioh-ir",
@@ -668,7 +671,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-lang-rust"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "folioh-ir",
  "proc-macro2",
@@ -681,7 +684,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-mdx"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "indexmap",
  "regex",
@@ -694,7 +697,7 @@ dependencies = [
 
 [[package]]
 name = "folioh-plugins"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "folioh-config",
  "folioh-mdx",
@@ -709,12 +712,13 @@ dependencies = [
 
 [[package]]
 name = "folioh-site"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "flate2",
  "folioh-config",
  "folioh-mdx",
  "folioh-plugins",
+ "html-escape",
  "indexmap",
  "regex",
  "serde",
@@ -727,13 +731,23 @@ dependencies = [
 
 [[package]]
 name = "folioh-watch"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "folioh-config",
  "notify",
  "serde_json",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "fs4"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e72ed92b67c146290f88e9c89d60ca163ea417a446f61ffd7b72df3e7f1dfd5"
+dependencies = [
+ "rustix",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -853,6 +867,12 @@ name = "hermit-abi"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
+
+[[package]]
+name = "html-escape"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9356095b4b41197bba32173600e1582792cda618f65d12f68e2e77d273413c5"
 
 [[package]]
 name = "hybrid-array"

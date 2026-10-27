@@ -8,9 +8,11 @@ use std::path::Path;
 use folioh_ir::ModuleIR;
 
 pub mod discover;
+mod doc_attributes;
 pub mod error;
 pub mod parse;
 mod rustdoc;
+pub use doc_attributes::doc_dependencies;
 
 pub use discover::{crate_of, discover, module_name, SourceFile};
 pub use error::{ParseError, RustSyntaxError};

@@ -32,9 +32,10 @@ impl Server {
 
     fn spawn_with(project: &Path, trace: &Path, extra: &[&str]) -> Server {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_folioh"));
+        let port = common::free_port().to_string();
         let mut child = common::env::scrub(&mut cmd)
             .current_dir(project)
-            .args(["serve", "-v", "--port", "4399"])
+            .args(["serve", "-v", "--port", &port])
             .args(extra)
             .env("FOLIOH_TRACE", trace)
             .stdin(Stdio::null())
@@ -160,6 +161,45 @@ fn serve_builds_then_republishes_on_every_save() {
     let cli_before = mtime(&cli_page);
     let manifest_path = build.join(".folioh-manifest.json");
 
+    // Directory metadata refreshes without editing a page or restarting serve.
+    let sidebar = build.join("content/_meta.ts");
+    let baseline_sidebar = read(&sidebar);
+    let metadata = project.join("docs/_meta.yaml");
+    let precedes = |first: &str, second: &str| {
+        let text = read(&sidebar);
+        text.find(&format!("\"{first}\":")).unwrap() < text.find(&format!("\"{second}\":")).unwrap()
+    };
+    let batches = server.count("  Source batch: ");
+    fs::write(&metadata, "order: [components, cli, index]\n").unwrap();
+    wait_until("metadata creation orders components first", || {
+        precedes("components", "cli")
+    });
+    wait_until("metadata creation commits", || {
+        server.count("  Source batch: ") > batches
+    });
+    let batches = server.count("  Source batch: ");
+    fs::write(&metadata, "order: [cli, components, index]\n").unwrap();
+    wait_until("metadata edit orders cli first", || {
+        precedes("cli", "components")
+    });
+    wait_until("metadata edit commits", || {
+        server.count("  Source batch: ") > batches
+    });
+    let valid_sidebar = read(&sidebar);
+    fs::write(&metadata, "order: wrong\n").unwrap();
+    server.wait_for("_meta.yaml:");
+    assert_eq!(read(&sidebar), valid_sidebar);
+    let batches = server.count("  Source batch: ");
+    fs::remove_file(&metadata).unwrap();
+    wait_until("metadata removal restores the default order", || {
+        read(&sidebar) == baseline_sidebar
+    });
+    wait_until("metadata removal commits", || {
+        server.count("  Source batch: ") > batches
+    });
+    // The intentional invalid metadata event is already accounted for here.
+    let metadata_errors = server.count("Watcher error");
+
     // A module edit republishes its page, its mirror and the API index.
     let arithmetic = project.join("src/example_package/arithmetic.py");
     let original = read(&arithmetic);
@@ -178,12 +218,14 @@ fn serve_builds_then_republishes_on_every_save() {
         "an untouched guide is not rewritten"
     );
     let manifest_after_edit = read(&manifest_path);
-    assert!(!manifest_after_edit.is_empty() && server.count("Watcher error") == 0);
+    assert!(!manifest_after_edit.is_empty() && server.count("Watcher error") == metadata_errors);
 
     // A broken edit is one error line naming the file; nothing is committed.
     let page_before_break = read(&arithmetic_page);
     fs::write(&arithmetic, "class Broken(\n").unwrap();
-    server.wait_for("  Watcher error: ");
+    wait_until("broken Python reports its own error", || {
+        server.count("Watcher error") > metadata_errors
+    });
     let output = server.output();
     assert!(
         output.contains("arithmetic.py")
@@ -363,4 +405,44 @@ fn serve_errors_before_the_build() {
     );
     assert!(busy.stdout.is_empty());
     assert!(!root.join(".build").exists());
+}
+
+#[test]
+fn included_rust_docs_are_watched_outside_the_source_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path();
+    fs::create_dir(project.join("src")).unwrap();
+    fs::write(
+        project.join("Cargo.toml"),
+        "[package]\nname = \"included-docs\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(
+        project.join("docs.yaml"),
+        "project: {name: Included}\nsource:\n  rust:\n    paths: [src]\n",
+    )
+    .unwrap();
+    fs::write(
+        project.join("src/lib.rs"),
+        "#![doc = include_str!(\"../README.md\")]\npub fn example() {}\n",
+    )
+    .unwrap();
+    let input = project.join("README.md");
+    fs::write(&input, "Original included prose.\n").unwrap();
+    let server = Server::spawn(project, &project.join("trace.jsonl"));
+    server.wait_for("Watching for file changes");
+    let page = project.join(".build/content/api-reference/rust/included_docs.mdx");
+    save_atomically(project, &input, "Changed included prose.\n");
+    wait_until("included docs edit published", || {
+        read(&page).contains("Changed included prose.")
+    });
+    fs::remove_file(&input).unwrap();
+    wait_until("included docs deletion published", || {
+        !read(&page).contains("Changed included prose.")
+    });
+    save_atomically(project, &input, "Recreated included prose.\n");
+    wait_until("included docs recreation published", || {
+        read(&page).contains("Recreated included prose.")
+    });
+    drop(server);
 }

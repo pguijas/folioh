@@ -109,6 +109,7 @@ fn project() -> Project {
             extensions: vec![".py".into()],
             roots: vec![root.join("demo")],
         }],
+        source_files: Vec::new(),
         doc_roots: vec![root.join("docs")],
         plugin_roots: vec![root.join("gallery")],
         preview_examples: Some(root.join("docs/examples")),

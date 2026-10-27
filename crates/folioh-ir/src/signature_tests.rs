@@ -18,6 +18,7 @@ fn func(name: &str, args: Vec<ArgIR>, returns: Option<&str>) -> FunctionIR {
         returns: returns.map(|ty| ReturnIR {
             ty: ty.to_string(),
             description: String::new(),
+            ..ReturnIR::default()
         }),
         raises: vec![],
         decorators: vec![],
@@ -28,6 +29,30 @@ fn func(name: &str, args: Vec<ArgIR>, returns: Option<&str>) -> FunctionIR {
         kind: FunctionKind::Function,
         signature: String::new(),
         visibility: String::new(),
+    }
+}
+
+#[test]
+fn yielding_signatures_and_old_serialized_returns_stay_distinct() {
+    let old = serde_json::json!({"type": "int", "description": "A value."});
+    let plain: ReturnIR = serde_json::from_value(old.clone()).unwrap();
+    assert!(!plain.is_generator && plain.return_annotation.is_none());
+    assert_eq!(serde_json::to_value(&plain).unwrap(), old);
+    for annotation in [Some("Iterator[int]"), None] {
+        let mut f = func("values", vec![], Some("int"));
+        let value = f.returns.as_mut().unwrap();
+        value.is_generator = true;
+        value.return_annotation = annotation.map(str::to_string);
+        let roundtrip: ReturnIR =
+            serde_json::from_value(serde_json::to_value(&*value).unwrap()).unwrap();
+        assert_eq!(&roundtrip, value);
+        assert_eq!(
+            render_signature(&f, true),
+            annotation.map_or_else(
+                || "def values()".to_string(),
+                |ty| format!("def values() -> {ty}")
+            )
+        );
     }
 }
 

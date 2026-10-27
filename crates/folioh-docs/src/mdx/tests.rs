@@ -73,6 +73,21 @@ fn with_repo(repo_url: &str) -> RenderOptions<'_> {
 }
 
 #[test]
+fn yields_render_the_item_type_without_replacing_the_signature_or_returns() {
+    let mut yielded = ret("int", "Each value.");
+    yielded.is_generator = true;
+    yielded.return_annotation = Some("Iterator[int]".into());
+    let f = function("values", vec![], Some(yielded));
+    let ordinary = function("name", vec![], Some(ret("str", "The name.")));
+    let m = module("streams", vec![], vec![f, ordinary]);
+    let mdx = module_to_mdx(&m, &RenderOptions::default());
+    assert!(mdx.contains("def values() -> Iterator[int]"));
+    assert!(mdx.contains("**Yields:** `int` - Each value."));
+    assert!(!mdx.contains("**Yields:** `Iterator[int]`") && !mdx.contains("**Returns:** `int`"));
+    assert!(mdx.contains("**Returns:** `str` - The name."));
+}
+
+#[test]
 fn module_page_matches_the_spec_example_byte_for_byte() {
     let mdx = module_to_mdx(&utils_module(), &with_repo("https://github.com/acme/mylib"));
     let expected = r#"---
@@ -457,6 +472,7 @@ fn a_rust_pub_use_is_a_re_export_and_attributes_sit_above_the_signature() {
     assert!(mdx.contains("```rust\n#[cfg(feature = \"extra\")]\npub fn conditional()\n```\n"));
     assert!(mdx.contains("```rust\n#[derive(Debug, Clone)]\npub struct Point\n```\n"));
     assert!(mdx.contains("```rust\nimpl fmt::Display for Point\n```\n"));
+    assert!(mdx.contains("### impl `fmt::Display` for `Point`"));
 }
 
 #[test]
@@ -584,11 +600,20 @@ title: Source Code
 "#;
     assert_eq!(mdx, expected);
     let undocumented = api_reference_index_to_mdx(&[module("m", vec![], vec![])]);
-    assert!(undocumented.contains("\"description\": \"Module documentation.\""));
+    assert!(undocumented.contains("\"description\": \"\""));
+    assert!(!undocumented.contains("Module documentation."));
     assert_eq!(
             api_reference_index_to_mdx(&[]),
             "---\nasIndexPage: true\ndescription: Generated source code documentation for project modules.\ntitle: Source Code\n---\n\n# Source Code\n\nNo source modules were found.\n"
         );
+}
+
+#[test]
+fn dunder_names_in_api_prose_are_literal() {
+    let mut m = utils_module();
+    m.docstring = doc("Call __init__ before __call__. Keep `__new__` as code.");
+    let mdx = module_to_mdx(&m, &RenderOptions::default());
+    assert!(mdx.contains(r"Call \_\_init\_\_ before \_\_call\_\_. Keep `__new__` as code."));
 }
 
 /// Every `#id` the symbol index points at, written on the page it names:

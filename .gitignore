@@ -51,6 +51,8 @@ __pycache__/
 target/
 _site/
 .build/
+.build.lock
+.build.owner.json
 
 # Local scratch: worktrees, editor and tool state, throwaway files
 .worktrees/

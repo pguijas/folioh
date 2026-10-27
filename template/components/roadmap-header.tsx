@@ -2,22 +2,9 @@ import type { ReactNode } from "react"
 
 import { cn } from "@/lib/utils"
 
-/* The roadmap page's masthead.
- *
- * One background: the header sits on the page, not on a card. The band this
- * replaces filled its own `bg-card` section behind a border, which split the
- * top of the page into a second colour and made the first thing a reader saw
- * a slab rather than a title. There is no backdrop and no decorative spine
- * either — the page below is already a diagram of nodes and lines, and
- * drawing an ornamental one above it says nothing twice.
- *
- * Sans throughout. Mono is for a version numeral, which lives on the cards
- * below, not here.
- *
- * It holds no selection. It used to own a project switcher, so it also owned
- * the state and took its body as a render prop; the page now draws one card
- * per project and shows both at once, so there is nothing to select and this
- * is a plain server component again.
+/* The stateless roadmap masthead sits directly on the page. Project cards
+ * own their selection and release numerals; the header supplies the title
+ * and links in the site's sans typography.
  */
 
 interface RoadmapHeaderProps {
@@ -34,14 +21,8 @@ export const FOCUS_RING =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
 
 /**
- * A mark per project, drawn inline because the template ships no icon set and
- * this needs two glyphs, not a dependency.
- *
- * Keyed by the project key from docs.yaml, with a neutral dot for anything
- * unrecognised — a site whose projects are not Folioh's still gets a card that
- * lines up, just without a bespoke mark. A framework component should not know
- * these two names; when this lands in the real roadmap the glyph belongs in
- * `roadmap.projects.<key>.icon` alongside the label.
+ * The default docs key gets a page mark. Any other project key from docs.yaml
+ * gets the same neutral dot, independent of its name or label.
  */
 export function ProjectIcon({
   projectKey,
@@ -61,23 +42,11 @@ export function ProjectIcon({
     className: cn("size-4 shrink-0", className),
   }
 
-  // Docs: a page. Agents: a robot.
   if (projectKey === "docs") {
     return (
       <svg {...common}>
         <path d="M4 2h5l3 3v9H4z" />
         <path d="M9 2v3h3" />
-      </svg>
-    )
-  }
-  if (projectKey === "agents") {
-    return (
-      <svg {...common}>
-        <path d="M8 1.5v2" />
-        <rect x="2.75" y="3.75" width="10.5" height="8" rx="2.25" />
-        <path d="M5.5 11.75v1.75M10.5 11.75v1.75" />
-        <circle cx="5.9" cy="7.5" r="0.9" fill="currentColor" stroke="none" />
-        <circle cx="10.1" cy="7.5" r="0.9" fill="currentColor" stroke="none" />
       </svg>
     )
   }

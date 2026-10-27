@@ -406,7 +406,7 @@ fn prose_sections_close_the_long_description_in_every_style() {
     );
     assert_eq!(
         numpy.long_description,
-        "**Deprecated:** Use `other` instead.\n\n**Warning:** Not thread safe.\n\n**See also:** other : Does the same."
+        ".. deprecated:: 1.6.0\n    Use `other` instead.\n\n**Warning:** Not thread safe.\n\n**See also:** other : Does the same."
     );
 
     let rest = parse(

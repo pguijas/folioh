@@ -12,7 +12,7 @@ use crate::features::{
     DISABLED_API_MODULES,
 };
 use crate::headings::shift_headings;
-use crate::mdx::{decorated_signature, display_name, member_table, type_signature};
+use crate::mdx::{decorated_signature, display_name, member_table, type_signature, type_title};
 use crate::routes::{module_route, route_base};
 
 /// The config values the llms writers read.
@@ -177,6 +177,15 @@ fn heading_block(heading: &str, citation: &str, url: &str) -> String {
 
 /// The summary and body, their headings no shallower than `floor`.
 fn prose_blocks(docstring: &DocstringIR, floor: usize) -> Vec<String> {
+    let combined = [&docstring.short_description, &docstring.long_description]
+        .into_iter()
+        .filter(|text| !text.is_empty())
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    if let Some(rendered) = crate::mdx::rest::render(&combined, floor) {
+        return vec![mdx_to_markdown(&rendered)];
+    }
     [&docstring.short_description, &docstring.long_description]
         .into_iter()
         .filter(|text| !text.is_empty())
@@ -201,7 +210,10 @@ fn tail_blocks(docstring: &DocstringIR, language: &str) -> Vec<String> {
             docstring
                 .notes
                 .iter()
-                .map(|note| format!("- {}", inline(note))),
+                .map(|note| match crate::mdx::rest::render(note, 1) {
+                    Some(rendered) => mdx_to_markdown(&rendered),
+                    None => format!("- {}", inline(note)),
+                }),
         );
         blocks.push(lines.join("\n"));
     }
@@ -288,7 +300,13 @@ fn function_blocks(
         blocks.push(arg_table(func));
     }
     if let Some(returns) = &func.returns {
-        let label = if is_property { "Type" } else { "Returns" };
+        let label = if returns.is_generator {
+            "Yields"
+        } else if is_property {
+            "Type"
+        } else {
+            "Returns"
+        };
         let text = typed(&returns.ty, &inline(&returns.description));
         if !text.is_empty() {
             blocks.push(format!("**{label}:** {text}"));
@@ -348,7 +366,7 @@ fn class_blocks(cls: &ClassIR, level: usize, project_dir: &str, language: &str) 
 
 fn type_blocks(item: &TypeIR, project_dir: &str, language: &str) -> Vec<String> {
     let mut blocks = vec![heading_block(
-        &format!("## {} {}", item.kind.label(), item.name),
+        &format!("## {}", type_title(item, str::to_owned)),
         &source_citation(&item.source_file, item.line_number, project_dir),
         "",
     )];

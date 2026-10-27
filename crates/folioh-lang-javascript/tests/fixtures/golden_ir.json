@@ -466,7 +466,11 @@
             "kind": "regular"
           }
         ],
-        "returns": null,
+        "returns": {
+          "type": "number",
+          "description": "Each integer.",
+          "is_generator": true
+        },
         "raises": [],
         "decorators": [],
         "docstring": {
@@ -477,7 +481,7 @@
         },
         "is_async": false,
         "source_file": "functions.js",
-        "line_number": 32,
+        "line_number": 33,
         "kind": "function",
         "signature": "export function* range(start, end)",
         "visibility": "export"

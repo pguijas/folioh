@@ -4,4 +4,6 @@ export interface FoliohSearchDocument {
   content: string
 }
 
+export const foliohSearchPlaceholder = "Search documentation…"
+
 export const foliohSearchDocuments: FoliohSearchDocument[] = []

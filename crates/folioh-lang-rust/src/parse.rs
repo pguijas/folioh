@@ -15,10 +15,11 @@ use folioh_ir::{
 use proc_macro2::Span;
 use syn::spanned::Spanned;
 use syn::{
-    Attribute, Expr, Fields, ImplItem, Item, ItemEnum, ItemImpl, ItemStruct, ItemTrait, ItemType,
-    Lit, Meta, Signature, TraitItem, Visibility,
+    Attribute, Fields, ImplItem, Item, ItemEnum, ItemImpl, ItemStruct, ItemTrait, ItemType, Meta,
+    Signature, TraitItem, Visibility,
 };
 
+use crate::doc_attributes::doc_text;
 use crate::error::RustSyntaxError;
 
 /// One module's items in source order. `name` is the module path
@@ -39,7 +40,7 @@ pub fn parse_source(
     })?;
     let mut module = ModuleIR {
         name: name.to_string(),
-        docstring: docstring(&doc_text(&file.attrs)),
+        docstring: docstring(&doc_text(&file.attrs, source_file)),
         classes: Vec::new(),
         functions: Vec::new(),
         constants: Vec::new(),
@@ -82,13 +83,13 @@ fn push(ctx: &Ctx, item: &Item, module: &mut ModuleIR) {
             name: c.ident.to_string(),
             ty: text(src, c.ty.span()),
             value: text(src, c.expr.span()),
-            description: doc_text(&c.attrs),
+            description: doc_text(&c.attrs, file),
         }),
         Item::Static(s) if published(&s.vis, &s.attrs) => module.constants.push(VarIR {
             name: s.ident.to_string(),
             ty: text(src, s.ty.span()),
             value: text(src, s.expr.span()),
-            description: doc_text(&s.attrs),
+            description: doc_text(&s.attrs, file),
         }),
         // A `pub use` is the only item whose name is its whole statement: what
         // it re-exports is documented where it is defined.
@@ -136,8 +137,8 @@ fn struct_type(src: &str, s: &ItemStruct, file: &str) -> TypeIR {
     TypeIR {
         name: s.ident.to_string(),
         kind: TypeKind::Struct,
-        docstring: docstring(&doc_text(&s.attrs)),
-        fields: fields(src, &s.fields),
+        docstring: docstring(&doc_text(&s.attrs, file)),
+        fields: fields(src, &s.fields, file),
         variants: Vec::new(),
         methods: Vec::new(),
         bases: decorators(src, &s.attrs),
@@ -153,7 +154,7 @@ fn enum_type(src: &str, e: &ItemEnum, file: &str) -> TypeIR {
     TypeIR {
         name: e.ident.to_string(),
         kind: TypeKind::Enum,
-        docstring: docstring(&doc_text(&e.attrs)),
+        docstring: docstring(&doc_text(&e.attrs, file)),
         fields: Vec::new(),
         variants: e
             .variants
@@ -169,7 +170,7 @@ fn enum_type(src: &str, e: &ItemEnum, file: &str) -> TypeIR {
                     .discriminant
                     .as_ref()
                     .map_or_else(String::new, |(_, expr)| text(src, expr.span())),
-                description: doc_text(&v.attrs),
+                description: doc_text(&v.attrs, file),
             })
             .collect(),
         methods: Vec::new(),
@@ -186,7 +187,7 @@ fn trait_type(src: &str, t: &ItemTrait, file: &str) -> TypeIR {
     TypeIR {
         name: t.ident.to_string(),
         kind: TypeKind::Trait,
-        docstring: docstring(&doc_text(&t.attrs)),
+        docstring: docstring(&doc_text(&t.attrs, file)),
         // An associated type reads as a field of type `type`; an associated
         // constant as a field of its own type.
         fields: t
@@ -197,7 +198,7 @@ fn trait_type(src: &str, t: &ItemTrait, file: &str) -> TypeIR {
                     name: ty.ident.to_string(),
                     ty: "type".to_string(),
                     value: String::new(),
-                    description: doc_text(&ty.attrs),
+                    description: doc_text(&ty.attrs, file),
                 }),
                 TraitItem::Const(c) if !hidden(&c.attrs) => Some(VarIR {
                     name: c.ident.to_string(),
@@ -206,7 +207,7 @@ fn trait_type(src: &str, t: &ItemTrait, file: &str) -> TypeIR {
                         .default
                         .as_ref()
                         .map_or_else(String::new, |(_, expr)| text(src, expr.span())),
-                    description: doc_text(&c.attrs),
+                    description: doc_text(&c.attrs, file),
                 }),
                 _ => None,
             })
@@ -249,7 +250,7 @@ fn alias_type(src: &str, t: &ItemType, file: &str) -> TypeIR {
     TypeIR {
         name: t.ident.to_string(),
         kind: TypeKind::TypeAlias,
-        docstring: docstring(&doc_text(&t.attrs)),
+        docstring: docstring(&doc_text(&t.attrs, file)),
         fields: Vec::new(),
         variants: Vec::new(),
         methods: Vec::new(),
@@ -270,7 +271,7 @@ fn impl_type(src: &str, i: &ItemImpl, file: &str) -> TypeIR {
     TypeIR {
         name: text(src, i.self_ty.span()),
         kind: TypeKind::Impl,
-        docstring: docstring(&doc_text(&i.attrs)),
+        docstring: docstring(&doc_text(&i.attrs, file)),
         fields: Vec::new(),
         variants: Vec::new(),
         methods: i
@@ -307,7 +308,7 @@ fn function(
         returns: None,
         raises: Vec::new(),
         decorators: decorators(src, attrs),
-        docstring: docstring(&doc_text(attrs)),
+        docstring: docstring(&doc_text(attrs, file)),
         is_async: sig.asyncness.is_some(),
         source_file: file.to_string(),
         line_number: line_at(src, range.start),
@@ -318,7 +319,7 @@ fn function(
 }
 
 /// The public fields of a struct; a tuple field is named by its position.
-fn fields(src: &str, fields: &Fields) -> Vec<VarIR> {
+fn fields(src: &str, fields: &Fields, file: &str) -> Vec<VarIR> {
     fields
         .iter()
         .enumerate()
@@ -330,7 +331,7 @@ fn fields(src: &str, fields: &Fields) -> Vec<VarIR> {
                 .map_or_else(|| index.to_string(), ToString::to_string),
             ty: text(src, field.ty.span()),
             value: String::new(),
-            description: doc_text(&field.attrs),
+            description: doc_text(&field.attrs, file),
         })
         .collect()
 }
@@ -401,31 +402,6 @@ fn implements_private(i: &ItemImpl, private: &HashSet<String>) -> bool {
         .into_iter()
         .flatten()
         .any(|name| private.contains(&name))
-}
-
-/// The `///`, `//!` and `#[doc]` text of an item, one line per attribute with
-/// the leading space dropped, rustdoc markup made plain Markdown. The
-/// trailing newline is part of a description.
-fn doc_text(attrs: &[Attribute]) -> String {
-    let mut text = String::new();
-    for attr in attrs {
-        let Meta::NameValue(nv) = &attr.meta else {
-            continue;
-        };
-        if !nv.path.is_ident("doc") {
-            continue;
-        }
-        if let Expr::Lit(syn::ExprLit {
-            lit: Lit::Str(line),
-            ..
-        }) = &nv.value
-        {
-            let line = line.value();
-            text.push_str(line.strip_prefix(' ').unwrap_or(&line));
-            text.push('\n');
-        }
-    }
-    crate::rustdoc::plain_markdown(&text)
 }
 
 /// The first line and the rest, as every language's prose splits; the blank

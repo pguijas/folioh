@@ -30,7 +30,7 @@ pub use routes::{anchor_slug, member_anchor, module_route, symbol_prefix, type_a
 pub use sources::{
     discover_language, discover_sources, enabled_languages, file_extensions, has_parser,
     parse_discovered, parse_doc_sources, parse_language_sources, parse_python_sources,
-    DiscoveredFile, ParsedDocSources, ParsedSources,
+    source_dependencies, DiscoveredFile, ParsedDocSources, ParsedSources,
 };
 pub use xref::{build_symbol_index, resolve_type_link, SymbolIndex, BUILTINS};
 

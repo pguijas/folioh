@@ -29,6 +29,10 @@ export function PastelSocialImage({
   title: string
   breadcrumb?: string
 }) {
+  // Embedded SVG text resolves fonts on the rasterizing host. Keep only
+  // the badge artwork there; ImageResponse turns this text into glyph paths.
+  const iconBackground = projectIconSvg?.replace(/<text\b[^>]*>[\s\S]*?<\/text>/g, "")
+  const monogram = Array.from(projectName).slice(0, 2).join("").toLowerCase()
   return (
     <div
       style={{
@@ -69,12 +73,32 @@ export function PastelSocialImage({
           fontWeight: 700,
         }}
       >
-        <img
-          width={64}
-          height={64}
-          alt=""
-          src={"data:image/svg+xml," + encodeURIComponent(projectIconSvg!)}
-        />
+        <div style={{ display: "flex", position: "relative", width: 64, height: 64 }}>
+          <img
+            width={64}
+            height={64}
+            alt=""
+            src={"data:image/svg+xml," + encodeURIComponent(iconBackground!)}
+          />
+          <div
+            style={{
+              display: "flex",
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width: 64,
+              height: 64,
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 30,
+              fontWeight: 800,
+              letterSpacing: -1,
+              color: "#233153",
+            }}
+          >
+            {monogram}
+          </div>
+        </div>
         {projectName}
       </div>
       <div

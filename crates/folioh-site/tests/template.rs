@@ -428,7 +428,7 @@ fn bundled_template_carries_injection_anchors() {
     let docs_layout = text("app/docs/layout.tsx");
     for anchor in [
         "url: \"/docs/opengraph-image\"",
-        "images: [\"/docs/opengraph-image\"]",
+        "\"/docs/opengraph-image\"",
         "getPageMap(\"/docs\")",
         "footer={<Footer />}",
         "<ThemeGallery />",
@@ -474,7 +474,7 @@ fn bundled_template_carries_injection_anchors() {
         "builtins register before the project preset (registry is last-wins)"
     );
     assert!(text("components/landing-navbar.tsx").contains("__PROJECT_NAME_JSON__"));
-    assert!(text("components/theme-configurator.tsx")
+    assert!(text("theme/theme-config.ts")
         .contains("const configuredDefaultPresetId = \"pastel\" // __FOLIOH_THEME_PRESET__"));
     let selector = text("components/version-selector.tsx");
     assert!(selector.contains("__VERSIONS__") && selector.contains("__CURRENT_VERSION_PATH__"));
@@ -494,7 +494,7 @@ fn bundled_template_carries_injection_anchors() {
         package["scripts"]["postbuild"],
         "pagefind --site out --output-subdir _pagefind --glob \"{index.html,docs/**/*.html}\""
     );
-    // The JS static-path gate mirrors folioh-config's disabled features (i18n, versions -> versioning).
+    // Authored paths are never reserved by experimental configuration gates.
     let params = text("lib/docs-route-params.js");
     let literal = regex::Regex::new(r"const DISABLED_DOC_STATIC_PATHS = (\[.*?\])\n")
         .unwrap()
@@ -502,6 +502,6 @@ fn bundled_template_carries_injection_anchors() {
         .expect("gate literal")[1]
         .to_string();
     let js_paths: serde_json::Value = serde_json::from_str(&literal).unwrap();
-    assert_eq!(js_paths, serde_json::json!([["i18n"], ["versioning"]]));
+    assert_eq!(js_paths, serde_json::json!([]));
     assert_eq!(folioh_config::DISABLED_FEATURES, ["i18n", "versions"]);
 }

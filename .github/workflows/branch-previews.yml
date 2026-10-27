@@ -102,6 +102,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
+          # Isolate PR-target caches, including restore fallbacks, from main and release jobs.
+          prefix-key: folioh-preview-source-v1
           workspaces: preview-source
           cache-bin: false
 
@@ -151,6 +153,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: branch-preview-site
+          retention-days: 1
           path: preview-source/_site
           if-no-files-found: error
 
@@ -165,6 +168,7 @@ jobs:
       group: "pages"
       cancel-in-progress: false
     permissions:
+      actions: write
       contents: write
       issues: write
       pages: write
@@ -236,6 +240,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         if: steps.deploy-gate.outputs.enabled == 'true'
         with:
+          prefix-key: folioh-preview-deploy-v1
           workspaces: trusted-source
           cache-bin: false
 
@@ -368,6 +373,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: _pages-artifact
+          retention-days: 1
 
       - name: Deploy to GitHub Pages
         if: steps.deploy-gate.outputs.enabled == 'true'
@@ -417,3 +423,25 @@ jobs:
             --index-url "$INDEX_URL" \
             --branch "$BRANCH" \
             --head-sha "$HEAD_SHA"
+
+      - name: Remove consumed temporary artifacts
+        if: success() && steps.deploy-gate.outputs.enabled == 'true' && steps.deployment.outcome == 'success'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Only this run's consumed intermediates; releases and Pages stay published.
+            const { owner, repo } = context.repo
+            const names = new Set(['branch-preview-site', 'github-pages'])
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+              owner, repo, run_id: context.runId, per_page: 100
+            })
+            for (const artifact of artifacts) {
+              if (!names.has(artifact.name)) continue
+              try {
+                await github.rest.actions.deleteArtifact({ owner, repo, artifact_id: artifact.id })
+                core.info(`Removed temporary artifact ${artifact.name} (${artifact.id})`)
+              } catch (error) {
+                if (error.status !== 404) throw error
+              }
+            }

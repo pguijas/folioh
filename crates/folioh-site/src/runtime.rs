@@ -374,8 +374,15 @@ impl NextRuntime {
             }
         }
         remove_stale_build_artifacts(build_dir).map_err(|e| SiteError::io(build_dir, e))?;
-        let mut child = self
-            .pnpm(build_dir)
+        let mut command = self.pnpm(build_dir);
+        // The CLI owns this server tree. A terminal signal reaches the CLI,
+        // which shuts down this separate group and reaps its direct child.
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+        let mut child = command
             .args([
                 "exec",
                 "next",

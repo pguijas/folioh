@@ -138,6 +138,28 @@ def load(path: str) -> dict:
     """
 ```
 
+### Yields
+
+Describe each item a generator yields under `Yields:`:
+
+```python
+from collections.abc import Iterator
+
+def count(limit: int) -> Iterator[int]:
+    """Count up to a limit.
+
+    Yields:
+        int: Each value below the limit.
+    """
+    yield from range(limit)
+```
+
+The signature keeps `Iterator[int]`; the **Yields** line describes `int`.
+NumPy `Yields` sections and reST `:yields int:` fields carry the same meaning.
+When the yielded type is omitted, Folioh shows its description without using
+the function's iterator annotation as the item type.
+Markdown exports and `llms-full.txt` use the same distinction.
+
 ### Raises
 
 List exceptions the function may raise under `Raises:`:
@@ -590,8 +612,10 @@ export function connect(host, options = {}) {}
 The description comes first, then one parameter row per `@param`: `[name]`
 is read as the parameter's name (the row does not mark it optional),
 `[name=default]` gives its default, and `options.port` becomes a row of its own
-after `options`. `@returns` (or `@return`) and `@throws` fill the return and
-raise lines, `@deprecated` renders as a **Deprecated:** paragraph, and each
+after `options`. `@returns` (or `@return`), `@yields` (or `@yield`) and `@throws`
+fill the return, yielded-item and raise lines. For example,
+`@yields {number} Each value.` renders as **Yields** with item type `number`.
+`@deprecated` renders as a **Deprecated:** paragraph, and each
 `@example` becomes a code block.
 `{@link Target}` reads as `Target` in code, `{@link Target text}` or
 `{@link Target|text}` as its text, and a URL target as a link. A parameter
@@ -612,5 +636,7 @@ comments for the module, and reads their Markdown as rustdoc does:
   heading.
 
 A Rust function shows its signature as written, with no linked types, and its
-doc comment; there is no parameter table. `#[doc = include_str!("...")]` is not
-read in this release.
+doc comment; there is no parameter table. Literal `#[doc = include_str!("...")]`
+files and `cfg_attr` doc values are also read. See [Rust documentation
+attributes](./languages#rust-documentation-attributes) for path resolution,
+missing-file warnings and incremental builds.

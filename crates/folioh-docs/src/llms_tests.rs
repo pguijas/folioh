@@ -210,16 +210,15 @@ fn llms_txt_links_follow_site_url_and_route_base() {
 }
 
 #[test]
-fn llms_txt_skips_gated_docs_but_keeps_the_docs_heading() {
-    let gated = page(
-        "# Versioning\n\nHidden feature guide.",
-        Some("Versioning"),
-        "versioning",
-    );
-    let text = generate_llms_txt(&CTX, &[], &[gated]);
-    assert_eq!(text, "# TestProject\n\n## Docs\n");
-    let roadmap = page("# Roadmap\n\nShipped.", Some("Roadmap"), "roadmap");
-    assert!(generate_llms_txt(&CTX, &[], &[roadmap]).contains("- [Roadmap](/docs/roadmap/)"));
+fn llms_txt_includes_authored_pages_named_after_disabled_features() {
+    for route in ["versioning", "i18n"] {
+        let guide = page("# Guide\n\nProject guide.", Some("Guide"), route);
+        let text = generate_llms_txt(&CTX, &[], &[guide]);
+        assert!(
+            text.contains(&format!("- [Guide](/docs/{route}/)")),
+            "{text}"
+        );
+    }
 }
 
 #[test]
@@ -234,12 +233,11 @@ fn llms_full_txt_shape_headings_and_gates() {
 
     assert_eq!(generate_llms_full_txt(&[], &[], None), "");
     for route in ["versioning", "i18n"] {
-        let gated = page(
-            "# Hidden\n\nExperimental guide content.",
-            Some("Hidden"),
-            route,
+        let gated = page("# Guide\n\nProject guide content.", Some("Guide"), route);
+        assert!(
+            generate_llms_full_txt(&[], &[gated], None).contains("Project guide content."),
+            "{route}"
         );
-        assert_eq!(generate_llms_full_txt(&[], &[gated], None), "", "{route}");
     }
     let landing = page(
         "# Landing Page\n\nConfigure the optional homepage.",
@@ -339,6 +337,24 @@ fn llms_full_txt_a_return_or_raise_without_a_type_reads_as_its_description() {
     assert!(!text.contains(":** ``") && !text.contains("- ``"), "{text}");
     assert!(!text.contains("\n- \n"), "{text}");
     assert_eq!(text.matches("**Returns:**").count(), 1, "{text}");
+}
+
+#[test]
+fn llms_full_txt_keeps_yielded_items_separate_from_return_annotations() {
+    let mut value = ret("int", "Each value.");
+    value.is_generator = true;
+    value.return_annotation = Some("Iterator[int]".into());
+    let yielded = function("values", vec![], Some(value));
+    let ordinary = function("name", vec![], Some(ret("str", "The name.")));
+    let text = generate_llms_full_txt(
+        &[module("streams", vec![], vec![yielded, ordinary])],
+        &[],
+        None,
+    );
+    assert!(text.contains("def values() -> Iterator[int]"));
+    assert!(text.contains("**Yields:** `int` - Each value."));
+    assert!(!text.contains("**Returns:** `int`") && !text.contains("**Yields:** `Iterator[int]`"));
+    assert!(text.contains("**Returns:** `str` - The name."));
 }
 
 #[test]
@@ -451,4 +467,12 @@ fn llms_full_txt_renders_types_after_functions() {
     assert!(text.find("## area").unwrap() < text.find("## Struct Point").unwrap());
     assert!(text.contains("```rust\npub fn area(shape: &Shape) -> f64\n```\n\nArea of a shape.\n\n| Parameter | Type | Default | Description |\n| --- | --- | --- | --- |\n| `shape` | `Shape` |  |  |\n\n**Returns:** `f64`\n\n## Struct Point\nSource: src/geo.rs:3\n\n```rust\npub struct Point\n```\n\nA 2D point.\n\n| Field | Type | Description |\n| --- | --- | --- |\n| `x` | `f64` | Horizontal. |\n\n### norm\nSource: src/geo.rs:12\n\n```rust\npub fn norm(&self) -> f64\n```\n\nVector length.\n\n**Returns:** `f64` - Length.\n\n## Enum Shape\nSource: src/geo.rs:20\n\n```rust\npub enum Shape\n```\n\nA shape.\n\n| Variant | Type | Description |\n| --- | --- | --- |\n| `Circle` | `f64` | Round. |"));
     assert!(!text.contains("def area"));
+    let mut implementation = type_item("Point", TypeKind::Impl);
+    implementation.bases = vec!["fmt::Display".to_string()];
+    implementation.signature = "impl fmt::Display for Point".to_string();
+    let mut rust = rust_module();
+    rust.types.push(implementation);
+    let text = generate_llms_full_txt(&[rust], &[], Some(&ctx));
+    assert!(text.contains("## impl fmt::Display for Point\n"));
+    assert!(!text.contains("## Impl Point\n"));
 }

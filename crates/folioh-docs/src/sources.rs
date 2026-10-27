@@ -237,3 +237,13 @@ pub fn parse_doc_sources(config: &DocsConfig) -> Result<ParsedDocSources, DocsEr
 #[cfg(test)]
 #[path = "sources_tests.rs"]
 mod tests;
+
+/// Additional literal documentation inputs read by a source file. Missing
+/// inputs remain listed so deletion and later creation invalidate the source.
+pub fn source_dependencies(path: &Path) -> Vec<PathBuf> {
+    if path.extension().is_some_and(|ext| ext == "rs") {
+        folioh_lang_rust::doc_dependencies(path)
+    } else {
+        Vec::new()
+    }
+}

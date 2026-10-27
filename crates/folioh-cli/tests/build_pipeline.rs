@@ -331,6 +331,38 @@ fn build_writes_the_golden_pages_and_prints_the_transcript() {
         "✓ Pages        › 5 pages, 4 skipped pages"
     );
     assert!(build.join("content/cli.mdx").is_file());
+
+    // Optional targets omitted by a custom template are diagnostic details,
+    // not warnings; verbose builds identify each target and its reason.
+    let template = project.join("template");
+    folioh_site::fs::copy_tree(&repo().join("template"), &template, &[]).unwrap();
+    for file in ["app/robots.ts", "app/opengraph-image.tsx"] {
+        fs::remove_file(template.join(file)).unwrap();
+    }
+    let config = project.join("docs.yaml");
+    fs::write(
+        &config,
+        format!("{}\ntemplate:\n  path: template\n", read(&config)),
+    )
+    .unwrap();
+    let normal = folioh(&project, &["build", "--clean"]);
+    normal.ok();
+    assert!(normal.diagnostics().is_empty(), "{}", normal.stderr);
+    assert!(!normal.stdout.contains("Skipped template injection:"));
+    let verbose = folioh(&project, &["build", "--verbose"]);
+    verbose.ok();
+    for diagnostic in [
+        "app/robots.ts (optional sitemap/robots file not present)",
+        "app/opengraph-image.tsx (optional Open Graph image file not present)",
+    ] {
+        assert!(
+            verbose
+                .stdout
+                .contains(&format!("  Skipped template injection: {diagnostic}")),
+            "{}",
+            verbose.stdout
+        );
+    }
 }
 
 #[test]
@@ -798,18 +830,78 @@ fn real_export_of_the_example_site() {
     let (_dir, project) = example_project();
     // A language group has modules but no page of its own. The overview's
     // breadcrumb must not turn that group into a nonexistent index link.
+    let metadata_path = project.join("docs/_meta.yaml");
+    fs::write(
+        &metadata_path,
+        "order: [roadmap, http-api, components, cli, index]\n",
+    )
+    .unwrap();
     let config_path = project.join("docs.yaml");
-    let config = read(&config_path).replace(
-        "source:\n",
-        "source:\n  javascript:\n    paths: [src/javascript]\n",
-    );
-    fs::write(config_path, config).unwrap();
+    let config = read(&config_path)
+        .replace(
+            "source:\n",
+            "source:\n  javascript:\n    paths: [src/javascript]\n",
+        )
+        .replace("generate_llms_txt: false", "generate_llms_txt: true")
+        .replace(
+            "generate_llms_full_txt: false",
+            "generate_llms_full_txt: true",
+        );
+    let base = config.replace("landing:\n  enabled: false\n  comparison: false\n\n", "");
+    fs::write(
+        project.join("http.json"),
+        r#"{"openapi":"3.1.0","info":{"title":"HTTP API","version":"1"},"paths":{}}"#,
+    )
+    .unwrap();
+    fs::write(&config_path, format!("{base}\nlanding: true\nroadmap:\n  routes: {{docs: true, public: true}}\n  phases: []\nopenapi:\n  sources:\n    - {{path: http.json, route: http-api}}\n")).unwrap();
+    let child = project.join("docs/examples/nested-api");
+    fs::create_dir_all(child.join("src")).unwrap();
+    fs::write(child.join("docs.yaml"), "project:\n  name: Nested API\n  url: https://standalone.example\nsource:\n  javascript:\n    paths: [src]\n").unwrap();
+    fs::write(
+        child.join("src/demo.js"),
+        "/** Say hello. */\nexport function hello() { return 'hello'; }\n",
+    )
+    .unwrap();
+    let catalog = project.join("docs/examples/docs-only");
+    fs::create_dir_all(catalog.join("guide/components")).unwrap();
+    fs::write(catalog.join("docs.yaml"), "project:\n  name: Docs Only\nsource:\n  docs: [guide]\ntemplate:\n  docs_route_base: /reference/docs\nlanding:\n  sections:\n    - type: routes\n").unwrap();
+    fs::write(
+        catalog.join("guide/index.md"),
+        "# Catalog\n\n<ComponentIndex />\n",
+    )
+    .unwrap();
+    for (path, _) in tree(&repo().join("docs/guide/components")) {
+        if path.ends_with(".md") {
+            let destination = catalog.join("guide/components").join(&path);
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::write(
+                destination,
+                format!("# {}\n", path.trim_end_matches(".md").replace('-', " ")),
+            )
+            .unwrap();
+        }
+    }
     fs::create_dir_all(project.join("src/javascript")).unwrap();
     fs::write(
         project.join("src/javascript/greet.js"),
-        "export function greet(name) { return `Hello ${name}`; }\n",
+        "export function greet(name) { return `Hello ${name}`; }\n/**\n * Yield sample values.\n * @yields {number} Each JavaScript value.\n */\nexport function* values() { yield 1; }\n",
     )
     .unwrap();
+    let arithmetic = project.join("src/example_package/arithmetic.py");
+    fs::write(&arithmetic, format!("{}\nfrom collections.abc import Iterator\n\ndef values() -> Iterator[int]:\n    \"\"\"Yield sample values.\n\n    Call __init__ before iterating.\n\n    Yields:\n        int: Each Python value.\n    \"\"\"\n    yield 1\n", read(&arithmetic))).unwrap();
+    let cli_path = project.join("docs/cli.md");
+    fs::write(
+        project.join("src/example_package/notices.py"),
+        read(&repo().join("crates/folioh-docs/tests/fixtures/rest_directives/source.py")),
+    )
+    .unwrap();
+    let cli_source = format!("{}\n## Stable Heading\n\n[Stable](#stable-heading)\n[Missing](#missing-heading)\n[API add](/docs/api-reference/example_package/arithmetic/#add)\n", read(&cli_path));
+    fs::write(&cli_path, &cli_source).unwrap();
+    let missing_line = cli_source
+        .lines()
+        .position(|line| line.contains("[Missing]"))
+        .unwrap()
+        + 1;
     let started = std::time::Instant::now();
     let output = Command::new(env!("CARGO_BIN_EXE_folioh"))
         .current_dir(&project)
@@ -821,10 +913,138 @@ fn real_export_of_the_example_site() {
     let elapsed = started.elapsed();
     let stdout = String::from_utf8(output.stdout).unwrap();
     eprintln!("{stdout}\nreal export took {elapsed:?}");
-    assert!(output.status.success(), "{stdout}");
+    assert!(
+        output.status.success(),
+        "{stdout}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        stdout.contains(&format!(
+            "{}:{missing_line} → #missing-heading",
+            cli_path.display()
+        )),
+        "missing source fragment diagnostic in {stdout}"
+    );
+    assert!(
+        !stdout.contains("→ #stable-heading")
+            && !stdout.contains("→ /docs/api-reference/example_package/arithmetic/#add"),
+        "valid anchors were rejected: {stdout}"
+    );
     assert!(stdout.contains("Build output"));
-    assert!(stdout.contains("✓ Dependencies › installed"));
+    // The nested example installs the shared workspace before the parent export.
+    assert!(stdout.contains("✓ Dependencies › up to date, the lockfile has not moved"));
+    let sidebar_path = project.join(".build/content/_meta.ts");
+    let sidebar = read(&sidebar_path);
+    assert!(
+        sidebar.find("\"roadmap\":").unwrap() < sidebar.find("\"http-api\":").unwrap(),
+        "{sidebar}"
+    );
+    assert!(
+        sidebar.find("\"http-api\":").unwrap() < sidebar.find("\"components\":").unwrap(),
+        "{sidebar}"
+    );
+    assert!(
+        sidebar.find("\"components\":").unwrap() < sidebar.find("\"cli\":").unwrap(),
+        "{sidebar}"
+    );
     let site = project.join("_site");
+    let api_html = read(&site.join("docs/api-reference/example_package/arithmetic/index.html"));
+    let nested_root = site.join("_folioh/examples/nested-api");
+    let catalog_root = site.join("_folioh/examples/docs-only");
+    let catalog_index = catalog_root.join("reference/docs/index.html");
+    let catalog_html = read(&catalog_index);
+    let catalog_links = regex::Regex::new(
+        r#"<a\b[^>]*class="[^"]*component-gallery-link[^"]*"[^>]*href="([^"]+)""#,
+    )
+    .unwrap();
+    let mut count = 0;
+    for link in catalog_links.captures_iter(&catalog_html) {
+        let path = link[1].split(['?', '#']).next().unwrap();
+        let target = if path.starts_with('/') {
+            site.join(path.trim_start_matches('/'))
+        } else {
+            catalog_index.parent().unwrap().join(path)
+        };
+        assert!(
+            target.is_file() || target.join("index.html").is_file(),
+            "catalog link missing under custom docs base: {}",
+            &link[1]
+        );
+        count += 1;
+    }
+    assert!(count >= 30, "catalog links were not rendered");
+    let landing = read(&catalog_root.join("index.html"));
+    let anchors = regex::Regex::new(r#"<a\b[^>]*href="([^"]+)""#).unwrap();
+    assert!(
+        !anchors
+            .captures_iter(&landing)
+            .any(|c| c[1].contains("api-reference")),
+        "docs-only default landing advertises an API"
+    );
+    for (path, bytes) in tree(&nested_root) {
+        if path.ends_with(".html") {
+            let html = String::from_utf8(bytes).unwrap();
+            assert!(
+                !html.contains("property=\"og:image\""),
+                "originless image: {path}"
+            );
+            assert!(
+                !html.contains("name=\"twitter:image\""),
+                "originless Twitter image: {path}"
+            );
+        }
+    }
+    let notices = read(&site.join("docs/api-reference/example_package/notices/index.html"));
+    assert_eq!(notices.matches("data-slot=\"callout\"").count(), 6);
+    for (tone, count) in [("note", 2), ("warning", 2), ("tip", 1), ("info", 1)] {
+        assert_eq!(
+            notices
+                .matches(&format!("data-slot=\"callout\" data-variant=\"{tone}\""))
+                .count(),
+            count
+        );
+    }
+    assert!(notices.contains("Directive: custom-notice"));
+    assert!(!notices.contains(".. custom-notice::"));
+    assert!(regex::Regex::new(r"<p\b[^>]*>0\.2</p>")
+        .unwrap()
+        .is_match(&notices));
+    assert!(
+        regex::Regex::new(r"<p\b[^>]*>Call __init__ before iterating\.</p>")
+            .unwrap()
+            .is_match(&api_html),
+        "dunder prose became Markdown emphasis"
+    );
+    assert!(!read(&site.join("docs/api-reference/index.html")).contains("Module documentation."));
+    let yield_label = regex::Regex::new(r"<strong\b[^>]*>Yields:</strong>").unwrap();
+    let full = read(&site.join("llms-full.txt"));
+    assert!(full.contains("**Yields:** `int` - Each Python value."));
+    assert!(full.contains("**Yields:** `number` - Each JavaScript value."));
+    assert!(full.contains("def values() -> Iterator[int]"));
+    for (route, signature, description) in [
+        (
+            "api-reference/example_package/arithmetic",
+            "def values() -> Iterator[int]",
+            "Each Python value.",
+        ),
+        (
+            "api-reference/javascript/greet",
+            "export function* values()",
+            "Each JavaScript value.",
+        ),
+    ] {
+        let mdx = read(&project.join(format!(".build/content/{route}.mdx")));
+        assert!(
+            mdx.contains(signature),
+            "source signature missing from {route}"
+        );
+        assert!(mdx.contains("**Yields:**") && mdx.contains(description));
+        let html = read(&site.join(format!("docs/{route}/index.html")));
+        assert!(
+            yield_label.is_match(&html) && html.contains(description),
+            "yielded values missing from exported {route}"
+        );
+    }
     for rel in [
         "index.html",
         "docs/index.html",
@@ -856,5 +1076,318 @@ fn real_export_of_the_example_site() {
     assert!(
         loader.contains("IS_PRODUCTION && !isGeneratedFoliohContent"),
         "the Nextra loader is not patched"
+    );
+    for route in [
+        "docs/roadmap/index.html",
+        "docs/http-api/index.html",
+        "roadmap/index.html",
+    ] {
+        assert!(
+            site.join(route).is_file(),
+            "missing active integration route {route}"
+        );
+    }
+    // Authored content takes over the old OpenAPI route on the same warm build
+    // that disables the integrations; the other generated routes disappear.
+    fs::write(
+        project.join("docs/http-api.md"),
+        "# Project HTTP Guide\n\nAuthored HTTP guide survives plugin removal.\n",
+    )
+    .unwrap();
+    let public_base = base.replacen(
+        "project:\n",
+        "project:\n  url: https://docs.example/ignored-config-path\n",
+        1,
+    );
+    fs::write(&config_path, public_base).unwrap();
+    fs::write(&metadata_path, "order: [cli, components, index]\n").unwrap();
+    let warm = Command::new(env!("CARGO_BIN_EXE_folioh"))
+        .current_dir(&project)
+        .args(["build"])
+        .env("NO_COLOR", "1")
+        .env_remove("FOLIOH_FRONTEND_RUNTIME")
+        .output()
+        .unwrap();
+    assert!(
+        warm.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&warm.stdout),
+        String::from_utf8_lossy(&warm.stderr)
+    );
+    let sidebar = read(&sidebar_path);
+    assert!(
+        sidebar.find("\"cli\":").unwrap() < sidebar.find("\"components\":").unwrap(),
+        "{sidebar}"
+    );
+    let nested_api = read(&nested_root.join("docs/api-reference/javascript/demo/index.html"));
+    let social = regex::Regex::new(
+        r#"<meta (?:property|name)="(?:og:image|twitter:image)" content="([^"]+)""#,
+    )
+    .unwrap();
+    let urls: Vec<_> = social
+        .captures_iter(&nested_api)
+        .map(|c| c[1].to_string())
+        .collect();
+    assert!(
+        !urls.is_empty(),
+        "nested social metadata missing after public origin configured"
+    );
+    for url in urls {
+        assert!(
+            url.starts_with("https://docs.example/_folioh/examples/nested-api/"),
+            "wrong nested origin/base path: {url}"
+        );
+        let path = url
+            .strip_prefix("https://docs.example/")
+            .unwrap()
+            .split(['?', '#'])
+            .next()
+            .unwrap();
+        assert!(
+            site.join(path).is_file(),
+            "nested social image target missing: {url}"
+        );
+    }
+    for route in [
+        "docs/roadmap/index.html",
+        "roadmap/index.html",
+        "_folioh/markdown/roadmap.md",
+    ] {
+        assert!(
+            !site.join(route).exists(),
+            "disabled integration route remains: {route}"
+        );
+    }
+    let authored = read(&site.join("docs/http-api/index.html"));
+    let main = regex::Regex::new(r"(?s)<main\b[^>]*>(.*?)</main>").unwrap();
+    let scripts = regex::Regex::new(r"(?s)<script\b[^>]*>.*?</script>").unwrap();
+    let visible = main.captures(&authored).expect("authored main");
+    assert!(scripts
+        .replace_all(&visible[1], "")
+        .contains("Authored HTTP guide survives plugin removal."));
+    assert!(read(&site.join("_folioh/markdown/http-api.md"))
+        .contains("Authored HTTP guide survives plugin removal."));
+    assert!(read(&site.join("index.html")).contains("Example docs"));
+    // Rebuild with only a guide edit: the heading/anchor index cannot be
+    // reused just because configuration and the template stayed the same.
+    let renamed = cli_source
+        .replace("## Stable Heading", "## Renamed Heading")
+        .replace("[Missing](#missing-heading)", "[Missing](#renamed-heading)");
+    fs::write(&cli_path, &renamed).unwrap();
+    let stale_line = renamed
+        .lines()
+        .position(|line| line.contains("[Stable]"))
+        .unwrap()
+        + 1;
+    let heading_edit = Command::new(env!("CARGO_BIN_EXE_folioh"))
+        .current_dir(&project)
+        .args(["build"])
+        .env("NO_COLOR", "1")
+        .env_remove("FOLIOH_FRONTEND_RUNTIME")
+        .output()
+        .unwrap();
+    let heading_stdout = String::from_utf8_lossy(&heading_edit.stdout);
+    assert!(
+        heading_edit.status.success(),
+        "{heading_stdout}\n{}",
+        String::from_utf8_lossy(&heading_edit.stderr)
+    );
+    assert!(
+        heading_stdout.contains(&format!(
+            "{}:{stale_line} → #stable-heading",
+            cli_path.display()
+        )),
+        "{heading_stdout}"
+    );
+    assert!(
+        !heading_stdout.contains("→ #missing-heading")
+            && !heading_stdout.contains("→ #renamed-heading"),
+        "{heading_stdout}"
+    );
+}
+
+#[test]
+fn authored_pages_named_i18n_and_versioning_publish_without_experimental_config() {
+    let (_dir, project) = example_project();
+    let config = read(&project.join("docs.yaml"))
+        .replace("generate_llms_txt: false", "generate_llms_txt: true")
+        .replace(
+            "generate_llms_full_txt: false",
+            "generate_llms_full_txt: true",
+        );
+    fs::write(project.join("docs.yaml"), config).unwrap();
+    for route in ["i18n", "versioning"] {
+        fs::write(
+            project.join(format!("docs/{route}.md")),
+            format!("# Project {route}\n\nAuthored {route} body.\n"),
+        )
+        .unwrap();
+    }
+    for _ in 0..2 {
+        folioh(&project, &["build"]).ok();
+        let contract = json(&project.join(".build/public/_folioh/contract.json"));
+        let llms = read(&project.join("_site/llms.txt"));
+        let full = read(&project.join("_site/llms-full.txt"));
+        for route in ["i18n", "versioning"] {
+            let body = format!("Authored {route} body.");
+            assert!(read(&project.join(format!(".build/content/{route}.mdx"))).contains(&body));
+            assert!(
+                read(&project.join(format!(".build/public/_folioh/markdown/{route}.md")))
+                    .contains(&body)
+            );
+            assert!(contract["routes"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!(format!("/docs/{route}/"))));
+            assert!(llms.contains(&format!("/docs/{route}/")), "{llms}");
+            assert!(full.contains(&body), "{full}");
+        }
+    }
+}
+
+#[test]
+fn disabling_builtins_sweeps_generated_pages_and_preserves_authored_replacements() {
+    for authored in [false, true] {
+        let (_dir, project) = example_project();
+        let path = project.join("docs.yaml");
+        let base = read(&path).replace("landing:\n  enabled: false\n  comparison: false\n\n", "");
+        fs::write(
+            project.join("http.json"),
+            r#"{"openapi":"3.1.0","info":{"title":"HTTP API","version":"1"},"paths":{}}"#,
+        )
+        .unwrap();
+        let enabled = format!("{base}\nlanding: true\nroadmap:\n  routes: {{docs: true, public: true}}\n  phases: []\nopenapi:\n  sources:\n    - {{path: http.json, route: http-api}}\n");
+        fs::write(&path, enabled).unwrap();
+        folioh(&project, &["build"]).ok();
+        let build = project.join(".build");
+        for rel in [
+            "content/roadmap.mdx",
+            "content/http-api.mdx",
+            "app/roadmap/page.tsx",
+        ] {
+            assert!(
+                build.join(rel).is_file(),
+                "missing active plugin page {rel}"
+            );
+        }
+        folioh(&project, &["build"]).ok();
+        if authored {
+            for route in ["roadmap", "http-api"] {
+                fs::write(
+                    project.join(format!("docs/{route}.md")),
+                    format!("# Authored {route}\n\nProject-owned {route} body.\n"),
+                )
+                .unwrap();
+            }
+        }
+        fs::write(&path, base).unwrap();
+        folioh(&project, &["build"]).ok();
+        assert!(
+            !build.join("app/roadmap/page.tsx").exists(),
+            "disabled standalone view remains"
+        );
+        let contract = json(&build.join("public/_folioh/contract.json"));
+        for route in ["roadmap", "http-api"] {
+            for rel in [
+                format!("content/{route}.mdx"),
+                format!("public/_folioh/markdown/{route}.md"),
+            ] {
+                assert_eq!(
+                    build.join(&rel).is_file(),
+                    authored,
+                    "{rel}; authored={authored}"
+                );
+                if authored {
+                    assert!(
+                        read(&build.join(rel)).contains(&format!("Project-owned {route} body."))
+                    );
+                }
+            }
+            assert_eq!(
+                contract["routes"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&serde_json::json!(format!("/docs/{route}/"))),
+                authored
+            );
+        }
+    }
+}
+
+#[test]
+fn included_rust_docs_refresh_a_warm_build_and_missing_files_warn() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::create_dir(root.join("src")).unwrap();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"attribute-demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("docs.yaml"),
+        "project: {name: Attributes}\nsource:\n  rust:\n    paths: [src]\n",
+    )
+    .unwrap();
+    fs::write(root.join("src/lib.rs"), "#![doc = include_str!(\"../README.md\")]\n#[cfg_attr(any(), doc = \"Conditional API prose.\")]\npub fn example() {}\n").unwrap();
+    let original = read(&root.join("src/lib.rs"));
+    fs::write(root.join("README.md"), "First included documentation.\n").unwrap();
+    folioh(root, &["build"]).ok();
+    let page = root.join(".build/content/api-reference/rust/attribute_demo.mdx");
+    assert!(read(&page).contains("First included documentation."));
+    assert!(read(&page).contains("Conditional API prose."));
+    fs::write(root.join("README.md"), "Updated included documentation.\n").unwrap();
+    folioh(root, &["build"]).ok();
+    assert_eq!(read(&root.join("src/lib.rs")), original);
+    assert!(read(&page).contains("Updated included documentation."));
+    assert!(!read(&page).contains("First included documentation."));
+    fs::remove_file(root.join("README.md")).unwrap();
+    let missing = folioh(root, &["build"]);
+    missing.ok();
+    assert!(
+        missing.diagnostics().contains("README.md") && missing.diagnostics().contains("src/lib.rs"),
+        "{}",
+        missing.diagnostics()
+    );
+    assert!(!read(&page).contains("Updated included documentation."));
+}
+
+#[test]
+fn directory_order_includes_late_plugin_pages_and_drops_removed_ones() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path();
+    fs::create_dir(project.join("docs")).unwrap();
+    fs::write(project.join("docs/index.md"), "# Home\n").unwrap();
+    fs::write(project.join("docs/other.md"), "# Other\n").unwrap();
+    fs::write(
+        project.join("docs/_meta.yaml"),
+        "order: [roadmap, http-api, other, index]\n",
+    )
+    .unwrap();
+    fs::write(
+        project.join("http.json"),
+        r#"{"openapi":"3.1.0","info":{"title":"HTTP API","version":"1"},"paths":{}}"#,
+    )
+    .unwrap();
+    let base = "project: {name: Test}\nsource: {docs: [docs]}\n";
+    let config = project.join("docs.yaml");
+    fs::write(&config, format!("{base}roadmap: {{phases: []}}\nopenapi:\n  sources:\n    - {{path: http.json, route: http-api}}\n")).unwrap();
+    folioh(project, &["build"]).ok();
+    let metadata = project.join(".build/content/_meta.ts");
+    let text = read(&metadata);
+    let positions: Vec<_> = ["roadmap", "http-api", "other", "index"]
+        .map(|slug| text.find(&format!("\"{slug}\":")).unwrap())
+        .into();
+    assert!(positions.windows(2).all(|pair| pair[0] < pair[1]), "{text}");
+    fs::write(&config, base).unwrap();
+    folioh(project, &["build"]).ok();
+    let text = read(&metadata);
+    assert!(
+        !text.contains("roadmap") && !text.contains("http-api"),
+        "{text}"
+    );
+    assert!(
+        text.find("\"other\":").unwrap() < text.find("\"index\":").unwrap(),
+        "{text}"
     );
 }

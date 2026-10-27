@@ -8,10 +8,12 @@ import { NEXTRA_CLASS } from "@/lib/nextra-dom"
 import {
   type FoliohSearchDocument,
   foliohSearchDocuments,
+  foliohSearchPlaceholder,
 } from "@/lib/search-index"
 
 interface SearchCommandProps {
   placeholder?: string
+  inline?: boolean
 }
 
 const editableSelector = [
@@ -192,7 +194,8 @@ function installDevelopmentSearchIndex() {
 }
 
 export function SearchCommand({
-  placeholder = "Search documentation…",
+  placeholder = foliohSearchPlaceholder,
+  inline = false,
 }: SearchCommandProps) {
   const searchRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -270,6 +273,20 @@ export function SearchCommand({
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [])
+
+  if (inline) {
+    return (
+      <div ref={searchRef} data-folioh-search className="flex w-full justify-center text-left">
+        <Search
+          className="[&_kbd]:hidden"
+          placeholder={placeholder}
+          emptyResult="No matching docs or API pages."
+          errorText="Search index unavailable."
+          loading="Searching docs…"
+        />
+      </div>
+    )
+  }
 
   return (
     <div

@@ -1,4 +1,6 @@
 import Link from "next/link"
+import { SearchCommand } from "@/components/search-command"
+import { foliohSearchDocuments } from "@/lib/search-index"
 import { foliohDocs } from "@/lib/folioh-template"
 
 // Next marks a 404 noindex on its own; saying it here keeps the root
@@ -27,6 +29,9 @@ export default function NotFound() {
         There is no page at this address. It may have moved, or the link may
         be mistyped.
       </p>
+      {foliohSearchDocuments.length > 0 ? (
+        <SearchCommand inline />
+      ) : null}
       <div className="flex flex-wrap justify-center gap-3">
         <Link
           href={docsHref}

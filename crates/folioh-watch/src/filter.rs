@@ -36,6 +36,8 @@ impl LanguageRoots {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WatchConfig {
     pub languages: Vec<LanguageRoots>,
+    /// Exact extra inputs, including absent source documentation files.
+    pub source_files: Vec<PathBuf>,
     /// Existing doc roots; any file under one counts (images beside Markdown).
     pub doc_roots: Vec<PathBuf>,
     /// Directories the built-ins asked to watch (a plugin's content dir), existing only.
@@ -69,6 +71,7 @@ impl WatchConfig {
         for language in &mut self.languages {
             fix(&mut language.roots);
         }
+        fix(&mut self.source_files);
         fix(&mut self.doc_roots);
         fix(&mut self.plugin_roots);
         fix(&mut self.generated_dirs);
@@ -117,7 +120,11 @@ impl WatchConfig {
                 .languages
                 .iter()
                 .any(|language| language.owns(raw) || language.owns(&canonical))
-                || under(&self.doc_roots),
+                || under(&self.doc_roots)
+                || self
+                    .source_files
+                    .iter()
+                    .any(|path| raw == path || &canonical == path),
         };
         (class.plugin || class.preview || class.source).then_some(class)
     }

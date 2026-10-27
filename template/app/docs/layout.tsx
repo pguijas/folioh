@@ -1,3 +1,4 @@
+import { siteSocialImagesEnabled } from "@/lib/site-metadata-url"
 import { Footer, Layout, Navbar } from "nextra-theme-docs"
 import { getPageMap } from "nextra/page-map"
 // __PROJECT_HEADER_ACTION_IMPORTS_START__
@@ -14,17 +15,17 @@ import { VersionSelector } from "@/components/version-selector"
 
 export const metadata = {
   openGraph: {
-    images: [
+    images: siteSocialImagesEnabled() ? [
       {
         url: "/docs/opengraph-image",
         width: 1200,
         height: 630,
         alt: "__PROJECT_NAME__ documentation",
       },
-    ],
+    ] : [],
   },
   twitter: {
-    images: ["/docs/opengraph-image"],
+    images: siteSocialImagesEnabled() ? ["/docs/opengraph-image"] : [],
   },
 }
 

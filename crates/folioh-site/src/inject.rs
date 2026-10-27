@@ -424,19 +424,23 @@ impl<'a> TemplateConfigInjector<'a> {
         let default_icon = self.build_dir.join("app/icon.svg");
         if !self.config.theme.favicon.is_empty() {
             let source = self.project_path(&self.config.theme.favicon);
-            if source.exists() {
-                let ext = source
-                    .extension()
-                    .map(|e| format!(".{}", e.to_string_lossy()))
-                    .unwrap_or_else(|| ".svg".to_string());
-                let dest = self.build_dir.join("app").join(format!("icon{ext}"));
-                std::fs::create_dir_all(dest.parent().unwrap()).map_err(io(&dest))?;
-                std::fs::copy(&source, &dest).map_err(io(&dest))?;
-                if ext != ".svg" && default_icon.exists() {
-                    std::fs::remove_file(&default_icon).map_err(io(&default_icon))?;
-                }
-                return self.write_project_icon(None);
+            if !source.is_file() {
+                return Err(SiteError::NotFound(format!(
+                    "theme.favicon does not exist: {}",
+                    source.display()
+                )));
             }
+            let ext = source
+                .extension()
+                .map(|e| format!(".{}", e.to_string_lossy()))
+                .unwrap_or_else(|| ".svg".to_string());
+            let dest = self.build_dir.join("app").join(format!("icon{ext}"));
+            std::fs::create_dir_all(dest.parent().unwrap()).map_err(io(&dest))?;
+            std::fs::copy(&source, &dest).map_err(io(&dest))?;
+            if ext != ".svg" && default_icon.exists() {
+                std::fs::remove_file(&default_icon).map_err(io(&default_icon))?;
+            }
+            return self.write_project_icon(None);
         }
         let mut project_icon = None;
         if default_icon.exists() {
@@ -538,7 +542,7 @@ impl<'a> TemplateConfigInjector<'a> {
     }
 
     /// `theme.logo` as the root-relative URL of its copy in `public/`, which
-    /// both navbars show; `None` without a logo.
+    /// the docs, landing and previews navbars show; `None` without a logo.
     fn logo_src(&self) -> Option<String> {
         let file = Path::new(&self.config.theme.logo).file_name()?;
         Some(format!("/{}", url_path_segment(&file.to_string_lossy())))
@@ -660,16 +664,10 @@ impl<'a> TemplateConfigInjector<'a> {
         content = self.inject_header_logo(&content);
         content = self.inject_header_actions(&content);
         let og = json::string(&self.route("opengraph-image"));
-        content = content
-            .replace("url: \"/docs/opengraph-image\"", &format!("url: {og}"))
-            .replace(
-                "images: [\"/docs/opengraph-image\"]",
-                &format!("images: [{og}]"),
-            )
-            .replace(
-                "getPageMap(\"/docs\")",
-                &format!("getPageMap({})", json::string(&self.base())),
-            );
+        content = content.replace("\"/docs/opengraph-image\"", &og).replace(
+            "getPageMap(\"/docs\")",
+            &format!("getPageMap({})", json::string(&self.base())),
+        );
         content = self.inject_repo_link(&content);
         // Never inherit Nextra's feedback defaults: a repository alone does
         // not enable feedback, and an opt-in without a repository has no target.
@@ -763,7 +761,11 @@ impl<'a> TemplateConfigInjector<'a> {
         if !path.exists() {
             return Ok(());
         }
-        let mut content = self.substitute_identity(&self.read(&path)?, name);
+        let mut content = self.substitute_identity(&self.read(&path)?, name).replace(
+            "getPageMap(\"/docs\")",
+            &format!("getPageMap({})", json::string(&self.base())),
+        );
+        content = self.inject_header_logo(&content);
         content = self.inject_repo_link(&content);
         content = self.inject_search(&content);
         write_text_if_changed(&path, &content).map_err(io(&path))?;
@@ -777,8 +779,19 @@ impl<'a> TemplateConfigInjector<'a> {
                 self.skip(rel, "optional Open Graph image file not present");
                 continue;
             }
+            let original = self.read(&path)?;
+            if std::env::var("FOLIOH_EXAMPLE_SITE_URL").is_ok_and(|url| url.is_empty())
+                && std::env::var("FOLIOH_PREVIEW_URL")
+                    .unwrap_or_default()
+                    .is_empty()
+                && original.contains("__PROJECT_NAME__")
+            {
+                std::fs::remove_file(&path).map_err(io(&path))?;
+                self.skip(rel, "nested example has no public origin for social images");
+                continue;
+            }
             let content = substitute(
-                &self.substitute_identity(&self.read(&path)?, name),
+                &self.substitute_identity(&original, name),
                 "__PROJECT_DESCRIPTION__",
                 &format!("Documentation for {name}"),
             );
@@ -1035,7 +1048,22 @@ impl<'a> TemplateConfigInjector<'a> {
 
     fn inject_theme_config(&mut self) -> Result<()> {
         self.write_project_theme_module()?;
-        let rel = "components/theme-configurator.tsx";
+        const LEGACY: &str = "components/theme-configurator.tsx";
+        const MODEL: &str = "theme/theme-config.ts";
+        // Existing packages may still carry their complete model in the
+        // client component. Respect that ownership and its original marker.
+        if self.package_owns(LEGACY) {
+            self.skip(LEGACY, "provided by theme.package overlay");
+            return Ok(());
+        }
+        let legacy = self.build_dir.join(LEGACY);
+        let rel = if legacy.is_file() && self.read(&legacy)?.contains("__FOLIOH_THEME_PRESET__") {
+            LEGACY
+        } else if self.build_dir.join(MODEL).is_file() {
+            MODEL
+        } else {
+            LEGACY
+        };
         if self.package_owns(rel) {
             self.skip(rel, "provided by theme.package overlay");
             return Ok(());
@@ -1051,7 +1079,7 @@ impl<'a> TemplateConfigInjector<'a> {
         let overlay_dir = (!overlay.is_empty()).then(|| self.project_path(overlay));
         let overlay_owns = overlay_dir
             .as_ref()
-            .is_some_and(|dir| dir.join(rel).is_file());
+            .is_some_and(|dir| dir.join(rel).is_file() || dir.join(LEGACY).is_file());
         if self.config.template.path.is_empty() && !overlay_owns {
             let mut declared: Vec<String> = [self.theme_package_dir.clone(), overlay_dir]
                 .iter()

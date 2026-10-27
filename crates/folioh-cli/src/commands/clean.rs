@@ -14,6 +14,7 @@ use crate::cli::CleanArgs;
 use crate::error::CliError;
 use crate::ui::text::{GREEN, YELLOW};
 use crate::ui::Ui;
+use crate::workspace_lock::WorkspaceLease;
 
 const DEFAULT_OUTPUT: &str = "_site";
 
@@ -113,6 +114,10 @@ pub fn run(ui: &Ui, args: CleanArgs) -> Result<(), CliError> {
         )));
     }
     let build_dir = target.join(".build");
+    let lease = WorkspaceLease::acquire(&build_dir, "clean", None).map_err(CliError::message)?;
+    if let Some(message) = &lease.recovered {
+        ui.print_styled(YELLOW, &format!("warning: {message}"));
+    }
     let output_dir = read_output_dir_best_effort(ui, &target.join(&args.config), &target);
 
     let dirs: Vec<PathBuf> = [Some(build_dir), output_dir]

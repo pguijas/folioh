@@ -3,6 +3,9 @@
 import * as React from "react"
 import { ThemeProvider as NextThemesProvider, useTheme } from "next-themes"
 
+import { THEME_SCHEME_EVENT } from "@/lib/theme-events"
+export { THEME_SCHEME_EVENT } from "@/lib/theme-events"
+
 import { switchScheme } from "@/lib/scheme-transition"
 
 // `theme.dark_mode: false` in docs.yaml sets this to false: the site stays
@@ -14,7 +17,7 @@ export const darkModeEnabled: boolean = true // __FOLIOH_DARK_MODE__
 // with data-folioh-scheme when it is applied, and fires this event whenever the
 // applied theme changes. The provider forces the marked scheme on next-themes,
 // which hands the reader's own light/dark choice back once the mark is gone.
-export const THEME_SCHEME_EVENT = "folioh:theme-scheme"
+
 
 type FixedScheme = "light" | "dark" | undefined
 

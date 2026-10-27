@@ -62,12 +62,13 @@ Folioh warns about `.rst` files only when those files are still present inside a
 directory listed in `source.docs`. It does not emit a warning if the `.rst` files were
 already removed before running `folioh build` or `folioh serve`.
 
-Name guide files and directories with hyphens, not underscores: write
-`common-errors/index.md`, published at `/docs/common-errors/`. In this release a
-guide page whose path contains an underscore, such as `common_errors/index.md`,
-renders a not-found page at both `/docs/common_errors/` and `/docs/common-errors/`.
-Old Sphinx URLs are not redirected. API reference routes are the exception: Python
-package and module names keep their underscores.
+Guide files and directories may contain underscores: `common_errors.md`
+publishes at `/docs/common-errors/`, with `/docs/common_errors/` serving the same
+content. The original mixed spelling used by source links also works. Avoid two guides
+whose routes differ only by underscores and hyphens: they share a canonical URL,
+so the build reports a conflict. Old Sphinx `.html` URLs are not redirected.
+API reference routes keep Python package and module names unchanged, including
+their underscores.
 
 ### 4. Leave your docstrings alone
 

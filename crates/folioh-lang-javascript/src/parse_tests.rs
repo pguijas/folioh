@@ -5,6 +5,33 @@ fn module(source: &str) -> ModuleIR {
 }
 
 #[test]
+fn yields_tags_describe_items_while_returns_still_describe_returns() {
+    for (tag, ty, description, is_generator) in [
+        ("yields {number} Each value.", "number", "Each value.", true),
+        ("yield {number} Each value.", "number", "Each value.", true),
+        (
+            "returns {number} Final value.",
+            "number",
+            "Final value.",
+            false,
+        ),
+        ("yields Each value.", "", "Each value.", true),
+        ("yields", "", "", true),
+    ] {
+        let m = module(&format!(
+            "/** @{tag} */\nexport function* values() {{ yield 1; }}"
+        ));
+        let f = &m.functions[0];
+        let value = f.returns.as_ref().unwrap();
+        assert_eq!(value.is_generator, is_generator, "{tag}");
+        assert_eq!(value.ty, ty);
+        assert_eq!(value.description, description);
+        assert_eq!(value.return_annotation, None);
+        assert_eq!(f.signature, "export function* values()");
+    }
+}
+
+#[test]
 fn an_exported_function_carries_its_signature_and_its_jsdoc() {
     let module = module(
         r#"

@@ -5,8 +5,10 @@ mod cli;
 mod commands;
 mod error;
 mod pipeline;
+mod signals;
 mod ui;
 mod workflows;
+mod workspace_lock;
 
 use std::io::Write;
 use std::process::ExitCode;

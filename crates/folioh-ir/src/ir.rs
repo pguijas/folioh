@@ -145,12 +145,22 @@ pub struct ArgIR {
     pub kind: ArgKind,
 }
 
-/// The return value of a function.
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+/// A documented return value or yielded item.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug, Default)]
 pub struct ReturnIR {
     #[serde(rename = "type")]
     pub ty: String,
     pub description: String,
+    /// `type` describes each yielded item rather than the function's return.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub is_generator: bool,
+    /// The original Python return annotation for a yielding section's signature.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub return_annotation: Option<String>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// One documented exception.

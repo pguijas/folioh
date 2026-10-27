@@ -20,6 +20,10 @@ fn directory_routes_and_assets_are_relativised_for_file_urls() {
     common::write(&out, "docs/api-reference/folioh/index.html", "<h1>API</h1>");
     common::write(&out, "icon.svg", "<svg />");
     common::write(&out, "_next/static/chunks/app.js", "console.log('ok')");
+    common::write(&out, "_next/static/chunks/app.css", "body{}");
+    let flight =
+        r#"1:["$","link",null,{"href":"/_next/static/chunks/app.css?build=1","rel":"stylesheet"}]"#;
+    common::write(&out, "docs/index.txt", flight);
     common::write(&out, "media/folioh-commercial-v2-poster.jpeg", "poster");
     common::write(&out, "media/folioh-commercial-v2.mp4", "video");
     common::write(
@@ -71,6 +75,7 @@ fn directory_routes_and_assets_are_relativised_for_file_urls() {
         assert!(content.contains(needle), "missing {needle} in\n{content}");
     }
     assert!(!content.contains("data-href=\"components/index.html\""));
+    assert_eq!(read(&out.join("docs/index.txt")), flight);
 }
 
 #[test]
@@ -172,7 +177,10 @@ fn next_chunks_are_untouched_and_the_turbopack_runtime_is_patched_by_shape() {
             && content.contains("document.currentScript.getAttribute(\"src\")")
             && content.contains("return t?t[1]:\"/_next/\"")
     );
-    assert!(content.contains("return{src:e.getAttribute(\"src\")}"));
+    assert!(content.contains("return{src:/^https?:$/.test(location.protocol)?(()=>{let u=new URL(e.src);return u.pathname+u.search+u.hash})():e.getAttribute(\"src\")}"));
+    assert!(content.contains(
+        "if(e&&/^https?:$/.test(location.protocol))e=new URL(e,document.baseURI).pathname"
+    ));
     assert!(!content
         .replace("document.currentScript.getAttribute(\"src\")", "")
         .contains("currentScript.src"));
@@ -211,6 +219,10 @@ fn next_chunks_are_untouched_and_the_turbopack_runtime_is_patched_by_shape() {
         ("../../_next/static/chunks/app.js", "../../_next/"),
         ("_next/static/chunks/app.js", "_next/"),
         ("/_next/static/chunks/app.js", "/_next/"),
+        (
+            "/preview/probe/_next/static/chunks/app.js",
+            "/preview/probe/_next/",
+        ),
     ] {
         assert_eq!(&prefix_re.captures(src).unwrap()[1], expected, "{src}");
     }
@@ -257,7 +269,12 @@ fn pagefind_fragments_produce_the_file_search_fallback() {
     common::write(
         &out,
         "docs/index.html",
-        "<html><head></head><body>Docs</body></html>",
+        "<html><head></head><body>Docs mention _folioh-navigation.js</body></html>",
+    );
+    common::write(
+        &out,
+        "404.html",
+        "<html><head></head><body>Missing</body></html>",
     );
     let fragment = serde_json::json!({"url": "/docs/components/", "content": "Components Built-in UI components and live previews.", "meta": {"title": "Components"}, "anchors": []});
     let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
@@ -275,7 +292,9 @@ fn pagefind_fragments_produce_the_file_search_fallback() {
         b"not gzip",
     )
     .unwrap();
-    StaticAssetRewriter::new(&out).fix_asset_paths().unwrap();
+    StaticAssetRewriter::new(&out)
+        .fix_asset_paths_with_base_path("/preview/probe")
+        .unwrap();
     let html = read(&out.join("docs/index.html"));
     let fallback = read(&out.join("_folioh-search.js"));
     assert!(
@@ -290,4 +309,47 @@ fn pagefind_fragments_produce_the_file_search_fallback() {
     assert!(fallback.ends_with(
         "if(location.protocol==='file:'&&!window.pagefind){window.pagefind=api;}\n})();\n"
     ));
+    let fallback_404 = read(&out.join("404.html"));
+    assert!(
+        fallback_404.contains("src=\"/preview/probe/_folioh-search.js\""),
+        "{fallback_404}"
+    );
+    assert!(
+        fallback_404.contains("src=\"/preview/probe/_folioh-navigation.js\""),
+        "{fallback_404}"
+    );
+    assert!(html.contains("src=\"../_folioh-navigation.js\""));
+}
+
+#[test]
+fn flight_navigation_uses_directory_routes_while_html_keeps_file_targets() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("output");
+    common::write(
+        &out,
+        "docs/a/index.html",
+        "<a href=\"/docs/b/?view=full#example\">B</a>",
+    );
+    common::write(&out, "docs/b/index.html", "<h1>B</h1>");
+    common::write(&out, "icon.svg", "<svg />");
+    common::write(&out, "preview/probe/_next/static/app.css", "body{}");
+    common::write(
+        &out,
+        "docs/a/__next._full.txt",
+        r#"{"href":"/docs/b/?view=full#example","src":"/icon.svg","styles":{"href":"/preview/probe/_next/static/app.css?build=1"}}"#,
+    );
+    StaticAssetRewriter::new(&out).fix_asset_paths().unwrap();
+    assert!(
+        read(&out.join("docs/a/index.html")).contains("href=\"../b/index.html?view=full#example\"")
+    );
+    let flight = read(&out.join("docs/a/__next._full.txt"));
+    assert!(
+        flight.contains(r#""href":"../b/?view=full#example""#),
+        "{flight}"
+    );
+    assert!(flight.contains(r#""src":"../../icon.svg""#), "{flight}");
+    assert!(
+        flight.contains(r#""href":"/preview/probe/_next/static/app.css?build=1""#),
+        "{flight}"
+    );
 }

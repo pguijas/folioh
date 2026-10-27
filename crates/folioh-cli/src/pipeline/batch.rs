@@ -18,12 +18,14 @@ use folioh_ir::docstring::resolve_style;
 use folioh_ir::ModuleIR;
 use folioh_plugins::check_route_collisions;
 use folioh_site::builder::Manifest;
-use folioh_site::fs::{files_under, hash_file};
+use folioh_site::fs::files_under;
+use folioh_site::sidebar::directory_order_files;
 use folioh_site::SiteError;
 use folioh_watch::{BatchHandler, BatchSummary, ChangeKind, LanguageRoots, RetainedCache};
 
 use super::finalize::{finalize_generated_files, write_llm_outputs};
 use super::pages::{generate_content_pages, GenerateArgs};
+use super::source_hash::source_hash as hash_file;
 use super::{run_build, BuildOptions, Report, Site};
 
 /// The batch handler `folioh serve` hands to the watcher loop.
@@ -177,6 +179,7 @@ impl BatchHandler for SourceBatchHandler<'_, '_> {
         let mut known: BTreeSet<PathBuf> = self.cache.paths().map(Path::to_path_buf).collect();
         known.extend(pending.iter().cloned());
         known.extend(markdown_files(&config.source.docs));
+        known.extend(directory_order_files(&config.source.docs).map_err(text)?);
         known.extend(previous.sources.keys().map(PathBuf::from));
         known.extend(paths.iter().cloned());
         let mut hashes: HashMap<String, String> = known
@@ -221,6 +224,12 @@ impl BatchHandler for SourceBatchHandler<'_, '_> {
             .iter()
             .map(|m| m.source_file.clone())
             .chain(docs.iter().map(|d| d.source_file.clone()))
+            .chain(
+                known
+                    .iter()
+                    .filter(|p| p.file_name().is_some_and(|n| n == "_meta.yaml"))
+                    .map(|p| key(p)),
+            )
             .filter(|k| !k.is_empty())
             .collect();
         if let Some(changed) = changed_since(&hashes, &inputs) {
@@ -259,6 +268,7 @@ impl BatchHandler for SourceBatchHandler<'_, '_> {
             site.host,
             config,
             site.project_dir,
+            &generation.source_routes(),
             refresh_extensions.then_some(site.registry),
             false,
             &self.report,

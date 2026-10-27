@@ -4,10 +4,39 @@
 
 /// `{`→`\{`, `}`→`\}`, `<`→`&lt;`, `>`→`&gt;`, in that order. Prose only.
 pub fn escape_mdx_text(text: &str) -> String {
-    text.replace('{', "\\{")
+    escape_dunder_identifiers(text)
+        .replace('{', "\\{")
         .replace('}', "\\}")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+/// Dunder identifiers are literal prose, rather than Markdown strong emphasis.
+/// Leave escaped text and URL destinations alone; callers spare code spans.
+fn escape_dunder_identifiers(text: &str) -> String {
+    static NAMES: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let names = NAMES.get_or_init(|| crate::re(r"\b__[A-Za-z][A-Za-z0-9_]*__\b"));
+    names
+        .replace_all(text, |captures: &regex::Captures<'_>| {
+            let name = captures.get(0).expect("matched identifier");
+            let prefix = text[..name.start()]
+                .rsplit(char::is_whitespace)
+                .next()
+                .unwrap_or("");
+            let escaped = prefix
+                .bytes()
+                .rev()
+                .take_while(|&byte| byte == b'\\')
+                .count()
+                % 2
+                == 1;
+            if escaped || prefix.contains("://") || prefix.contains("](") {
+                name.as_str().to_string()
+            } else {
+                name.as_str().replace('_', "\\_")
+            }
+        })
+        .into_owned()
 }
 
 /// A value placed inside a double-quoted JSX attribute.

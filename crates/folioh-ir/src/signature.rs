@@ -43,8 +43,17 @@ pub fn render_signature(func: &FunctionIR, show_parens: bool) -> String {
     let mut signature = format!("{prefix} {}({})", func.name, params.join(", "));
     // A docstring-only `Returns:` has no type, so the signature gets no
     // trailing ` -> ` (omitted by design).
-    if let Some(returns) = func.returns.as_ref().filter(|r| !r.ty.is_empty()) {
-        signature.push_str(&format!(" -> {}", returns.ty));
+    // A yielded item type is not a return annotation: generators retain
+    // only the annotation written in their source signature.
+    if let Some(returns) = &func.returns {
+        let ty = if returns.is_generator {
+            returns.return_annotation.as_deref().unwrap_or("")
+        } else {
+            &returns.ty
+        };
+        if !ty.is_empty() {
+            signature.push_str(&format!(" -> {ty}"));
+        }
     }
     signature
 }

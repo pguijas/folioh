@@ -1,4 +1,4 @@
-import { siteMetadataUrl } from "@/lib/site-metadata-url"
+import { siteMetadataUrl, siteSocialImagesEnabled } from "@/lib/site-metadata-url"
 import { existsSync } from "fs"
 import { join } from "path"
 import { generateStaticParamsFor, importPage } from "nextra/pages"
@@ -8,6 +8,7 @@ import {
   isDisabledMdxPath,
   isUnderscoreAlias,
   normalizeMdxPath,
+  resolveMdxPath,
 } from "@/lib/docs-route-params"
 import { useMDXComponents as getMDXComponents } from "@/mdx-components"
 import { PageActionsButton } from "@/components/page-actions-button"
@@ -100,12 +101,12 @@ function pageAlternates(metadata, canonical, markdownUrl) {
 // An underscore alias (/docs/code_group/) serves the page of its hyphenated
 // route. The canonical names that route; without a site URL there is no
 // canonical to give, so the alias is kept out of indexes instead.
-function pageMetadata(metadata, mdxPath, isAlias) {
+function pageMetadata(metadata, mdxPath, isAlias, contentMdxPath) {
   const canonical = absoluteDocsUrl(mdxPath)
   const alternates = pageAlternates(
     metadata,
     canonical,
-    markdownMirrorUrl(mdxPath)
+    markdownMirrorUrl(contentMdxPath)
   )
   if (!canonical) {
     const robots = isAlias ? { robots: { index: false, follow: true } } : {}
@@ -125,21 +126,21 @@ function pageMetadata(metadata, mdxPath, isAlias) {
       title: metadata.openGraph?.title ?? title,
       description: metadata.openGraph?.description ?? description,
       url: canonical,
-      images: metadata.openGraph?.images ?? [
+      images: metadata.openGraph?.images ?? (siteSocialImagesEnabled() ? [
         {
           url: docsOgImageUrl,
           width: 1200,
           height: 630,
           alt: `${title} - ${projectName}`,
         },
-      ],
+      ] : []),
     },
     twitter: {
       ...metadata.twitter,
       card: metadata.twitter?.card ?? "summary_large_image",
       title: metadata.twitter?.title ?? title,
       description: metadata.twitter?.description ?? description,
-      images: metadata.twitter?.images ?? [docsOgImageUrl],
+      images: metadata.twitter?.images ?? (siteSocialImagesEnabled() ? [docsOgImageUrl] : []),
     },
   }
 }
@@ -171,8 +172,14 @@ export async function generateMetadata(props) {
   if (isMissingDocsIndex(mdxPath)) {
     return { robots: { index: false, follow: true } }
   }
-  const { metadata } = await importPage(mdxPath)
-  return pageMetadata(metadata, mdxPath, isUnderscoreAlias(params.mdxPath))
+  const contentMdxPath = resolveMdxPath(mdxPath, await _nextraParams())
+  const { metadata } = await importPage(contentMdxPath)
+  return pageMetadata(
+    metadata,
+    mdxPath,
+    isUnderscoreAlias(params.mdxPath),
+    contentMdxPath
+  )
 }
 
 const Wrapper = getMDXComponents().wrapper
@@ -187,7 +194,8 @@ export default async function Page(props) {
     leaveMissingDocsIndex()
   }
   const normalizedParams = { ...params, mdxPath }
-  const { default: MDXContent, toc, metadata } = await importPage(mdxPath)
+  const contentMdxPath = resolveMdxPath(mdxPath, await _nextraParams())
+  const { default: MDXContent, toc, metadata } = await importPage(contentMdxPath)
   // Pagefind indexes only pages whose <main> carries data-pagefind-body,
   // which the wrapper drops for searchable: false; an alias is a duplicate.
   const wrapperMetadata = isUnderscoreAlias(params.mdxPath)
@@ -196,7 +204,7 @@ export default async function Page(props) {
   return (
     <Wrapper toc={toc} metadata={wrapperMetadata}>
       <div className="mb-2 flex justify-end" data-pagefind-ignore="all">
-        <PageActionsButton markdownPath={markdownMirrorPath(mdxPath)} />
+        <PageActionsButton markdownPath={markdownMirrorPath(contentMdxPath)} />
       </div>
       <ThemeWordmark name={projectName} />
       <PastelArtwork seed={mdxPath.join("/") || "folioh"} />

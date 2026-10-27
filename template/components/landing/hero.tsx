@@ -113,6 +113,7 @@ export function DocsMapLandingHero({
   actionGridClassName,
   installCommands,
   projectName,
+  pathToRoot,
 }: LandingHeroProps) {
   return (
     <section className="landing-surface border-b border-border">
@@ -143,7 +144,7 @@ export function DocsMapLandingHero({
             {defaultRoutes.map((route, index) => (
               <a
                 key={route.path}
-                href={route.href}
+                href={normalizeLandingHref(route.href, pathToRoot)}
                 className="group grid grid-cols-[4.5rem_1fr] gap-4 bg-card px-5 py-5 transition-colors hover:bg-muted/50"
                 style={{ animationDelay: `${220 + index * 80}ms` }}
               >

@@ -3,7 +3,7 @@
 //! the authoring contract, LLM files and robots pointers, the search index,
 //! preview examples and public files.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -502,6 +502,31 @@ impl<'a> SiteBuilder<'a> {
         self.emitted_routes.clone()
     }
 
+    /// Record plugin pages and remove unchanged orphans after plugin dispatch.
+    /// The source pipeline's routes are protected, including authored pages
+    /// replacing a previously generated route on this build.
+    pub fn sweep_plugin_pages(&mut self, source_routes: &BTreeSet<String>) -> Result<()> {
+        let ledger = self.build_dir.join(".folioh-plugin-pages.json");
+        let previous = crate::generated::load(&ledger)?;
+        let mut current = BTreeMap::new();
+        for route in self.emitted_routes.difference(source_routes) {
+            let path = self.contained_page(route, "access")?;
+            if let Some(digest) = crate::generated::digest(&path)? {
+                current.insert(route.clone(), digest);
+            }
+        }
+        for (route, digest) in previous {
+            if self.emitted_routes.contains(&route) {
+                continue;
+            }
+            let path = self.contained_page(&route, "remove")?;
+            if crate::generated::digest(&path)?.as_ref() == Some(&digest) {
+                self.remove_page(&route)?;
+            }
+        }
+        self.write_text(&ledger, &json::pretty(&current))
+    }
+
     /// Roll back to a snapshot taken with `emitted_routes`.
     pub fn restore_emitted_routes(&mut self, routes: BTreeSet<String>) {
         self.emitted_routes = routes;
@@ -654,6 +679,28 @@ impl<'a> SiteBuilder<'a> {
             .contract_components
             .as_deref()
             .unwrap_or(&BUILTIN_COMPONENTS);
+        // A copied template opts in with this marker. Imported JSON also lets
+        // the dev server update links when a source route appears or disappears.
+        let frontend_routes = self.build_dir.join("lib/folioh-routes.json");
+        let owns_routes = std::fs::read_to_string(&frontend_routes)
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .is_some_and(|data| data.get("foliohRoutes").and_then(Value::as_bool) == Some(true));
+        if owns_routes {
+            self.write_text(
+                &frontend_routes,
+                &format!(
+                    "{}\n",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "foliohRoutes": true,
+                        "docsRouteBase": self.docs_route_base(),
+                        "apiReference": self.emitted_routes.contains("api-reference/index"),
+                        "routes": &routes,
+                    }))
+                    .expect("route data serialises")
+                ),
+            )?;
+        }
         let candidate = render_authoring_contract(
             env!("CARGO_PKG_VERSION"),
             generated_at,
@@ -803,7 +850,8 @@ impl<'a> SiteBuilder<'a> {
             }
         }
         let content = format!(
-            "export interface FoliohSearchDocument {{\n  url: string\n  title: string\n  content: string\n}}\n\nexport const foliohSearchDocuments: FoliohSearchDocument[] = {}\n",
+            "export interface FoliohSearchDocument {{\n  url: string\n  title: string\n  content: string\n}}\n\nexport const foliohSearchPlaceholder = {}\n\nexport const foliohSearchDocuments: FoliohSearchDocument[] = {}\n",
+            json::string(&self.config.search.placeholder),
             json::pretty(&documents)
         );
         self.write_text(&index_path, &content)?;
@@ -856,8 +904,11 @@ impl<'a> SiteBuilder<'a> {
                 .unwrap_or_default();
             live.insert(name.clone());
             let target_dir = target_root.join(&name);
-            let digest =
-                Self::preview_example_digest(&example_dir, &self.preview_example_base_path(&name));
+            let digest = Self::preview_example_digest(
+                &example_dir,
+                &self.preview_example_base_path(&name),
+                &self.preview_example_site_url(),
+            );
             // An example is a whole nested build: its own install and its own
             // static export. Rebuilding one nobody touched is the most
             // expensive thing a warm build can do, so it is not done.
@@ -884,22 +935,24 @@ impl<'a> SiteBuilder<'a> {
     }
 
     /// The SHA-256 of an example's sources, the Folioh version that builds them,
-    /// the template they build against and the base path the nested build
-    /// bakes in: the four things that decide whether its published output is
+    /// the template they build against, the base path and the public origin the nested build
+    /// bakes in: the five things that decide whether its published output is
     /// still the output of this repository.
     ///
     /// The version, not `generator_fingerprint`, which is the hash of the
     /// running executable. Hashing the executable would invalidate every
     /// example on every `cargo build`, which is exactly the person this cache
     /// exists for.
-    fn preview_example_digest(example_dir: &Path, base_path: &str) -> String {
+    fn preview_example_digest(example_dir: &Path, base_path: &str, site_url: &str) -> String {
         let mut parts: Vec<u8> = Vec::new();
-        parts.extend_from_slice(b"folioh-preview-example-v3\0");
+        parts.extend_from_slice(b"folioh-preview-example-v4\0");
         parts.extend_from_slice(env!("CARGO_PKG_VERSION").as_bytes());
         parts.push(0);
         parts.extend_from_slice(crate::template::TEMPLATE_HASH.as_bytes());
         parts.push(0);
         parts.extend_from_slice(base_path.as_bytes());
+        parts.push(0);
+        parts.extend_from_slice(site_url.as_bytes());
         parts.push(0);
         for source in Self::preview_example_source_paths(example_dir) {
             let rel = source.strip_prefix(example_dir).unwrap_or(&source);
@@ -919,6 +972,19 @@ impl<'a> SiteBuilder<'a> {
             "{}/_folioh/examples/{name}",
             self.base_path.trim_end_matches('/')
         )
+    }
+
+    fn preview_example_site_url(&self) -> String {
+        let url = std::env::var("FOLIOH_PREVIEW_URL")
+            .ok()
+            .filter(|url| !url.is_empty())
+            .or_else(|| std::env::var("FOLIOH_EXAMPLE_SITE_URL").ok())
+            .unwrap_or_else(|| self.config.project.url.clone());
+        if !url.contains('\0') && (url.starts_with("https://") || url.starts_with("http://")) {
+            url
+        } else {
+            String::new()
+        }
     }
 
     /// Whether the published example already carries this digest.
@@ -956,12 +1022,18 @@ impl<'a> SiteBuilder<'a> {
         // nested build's root is this workspace, which holds both the shared
         // `node_modules` and the example's own directory.
         let previous = [
+            (
+                "FOLIOH_EXAMPLE_SITE_URL",
+                std::env::var_os("FOLIOH_EXAMPLE_SITE_URL"),
+            ),
             ("FOLIOH_BASE_PATH", std::env::var_os("FOLIOH_BASE_PATH")),
             (
                 "FOLIOH_TURBOPACK_ROOT",
                 std::env::var_os("FOLIOH_TURBOPACK_ROOT"),
             ),
         ];
+        let site_url = self.preview_example_site_url();
+        std::env::set_var("FOLIOH_EXAMPLE_SITE_URL", site_url);
         std::env::set_var("FOLIOH_BASE_PATH", &base_path);
         std::env::set_var("FOLIOH_TURBOPACK_ROOT", &self.build_dir);
         let result = run_build(PreviewBuildRequest {
@@ -1135,7 +1207,7 @@ impl<'a> SiteBuilder<'a> {
         remove_dir_all_if_exists(&self.output_dir).map_err(io(&self.output_dir))?;
         crate::fs::copy_tree_all(&out, &self.output_dir).map_err(io(&self.output_dir))?;
         crate::rewriter::StaticAssetRewriter::new(&self.output_dir)
-            .fix_asset_paths()
+            .fix_asset_paths_with_base_path(&self.base_path)
             .map_err(io(&self.output_dir))
     }
 

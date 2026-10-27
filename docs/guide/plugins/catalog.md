@@ -5,7 +5,9 @@
 Every integration below is **built in**: compiled into `folioh`, present in
 every build, and inert until its section appears in `docs.yaml`. Add the
 section and the integration builds its pages. Remove it and the integration
-goes inert again. A clean build clears any route it had already written.
+goes inert again. The next build removes its generated pages and standalone
+routes, including on a warm workspace. Project-authored pages at the same route
+remain available.
 
 ## Built-in integrations
 

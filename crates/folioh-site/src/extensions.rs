@@ -2,6 +2,7 @@
 //! `components/__folioh_components/`, `lib/*.ts` data modules, the
 //! `mdx-components.tsx` injection and `app/**/page.tsx` views.
 
+use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use folioh_config::canonicalize_lenient;
@@ -59,14 +60,31 @@ fn layout_import_line(layout: &LayoutDefinition) -> String {
 impl ExtensionEmitter {
     /// Copy components, write data modules, inject `mdx-components.tsx`, write views.
     pub fn apply(&self, registry: &ExtensionRegistry) -> Result<()> {
+        let ledger = self.build_dir.join(".folioh-extension-views.json");
+        let previous = crate::generated::load(&ledger)?;
         self.copy_components(registry)?;
         for module in registry.data_modules.values() {
             self.write_data_module(module)?;
         }
         self.inject_mdx_components(registry)?;
+        let mut current = BTreeMap::new();
         for view in registry.views.values() {
             self.write_view(view, registry)?;
+            let path = self.app_route_path(&view.path)?;
+            if let Some(digest) = crate::generated::digest(&path)? {
+                current.insert(view.path.clone(), digest);
+            }
         }
+        for (route, digest) in previous {
+            if current.contains_key(&route) {
+                continue;
+            }
+            let path = self.app_route_path(&route)?;
+            if crate::generated::digest(&path)?.as_ref() == Some(&digest) {
+                std::fs::remove_file(&path).map_err(io(&path))?;
+            }
+        }
+        write_text_if_changed(&ledger, &json::pretty(&current)).map_err(io(&ledger))?;
         Ok(())
     }
 

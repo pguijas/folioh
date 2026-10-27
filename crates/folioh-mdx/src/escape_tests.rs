@@ -1,6 +1,31 @@
 use super::*;
 
 #[test]
+fn dunder_identifiers_stay_literal_without_rewriting_code_or_urls() {
+    for (input, expected) in [
+        (
+            "Call __init__ and __next__.",
+            r"Call \_\_init\_\_ and \_\_next\_\_.",
+        ),
+        (
+            "`__init__` **bold** __two words__",
+            "`__init__` **bold** __two words__",
+        ),
+        ("```python\n__init__()\n```", "```python\n__init__()\n```"),
+        (
+            r"Already \_\_init\_\_ or \__call__.",
+            r"Already \_\_init\_\_ or \__call__.",
+        ),
+        (
+            "https://example.com/__init__/ [link](../__next__/)",
+            "https://example.com/__init__/ [link](../__next__/)",
+        ),
+    ] {
+        assert_eq!(escape_mdx(input), expected, "{input}");
+    }
+}
+
+#[test]
 fn escape_mdx_spares_inline_code_spans() {
     let cases = [
         ("Route is `/{repo}` here.", "Route is `/{repo}` here."),

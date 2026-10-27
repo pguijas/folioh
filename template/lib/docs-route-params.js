@@ -2,7 +2,8 @@
 // DISABLED_DOC_ROUTES in crates/folioh-docs/src/features.rs
 // (parity is enforced by folioh-site's template.rs test
 // `the_bundled_template_carries_the_injection_points`).
-const DISABLED_DOC_STATIC_PATHS = [["i18n"], ["versioning"]]
+// Configuration gates do not reserve names in a project's documentation.
+const DISABLED_DOC_STATIC_PATHS = []
 
 const DISABLED_DOC_STATIC_PATH_KEYS = new Set(
   DISABLED_DOC_STATIC_PATHS.map((path) => path.join("/"))
@@ -46,7 +47,7 @@ export function isUnderscoreAlias(mdxPath) {
   )
 }
 
-export function normalizeMdxPath(mdxPath) {
+function sourceMdxPath(mdxPath) {
   if (!Array.isArray(mdxPath)) {
     return []
   }
@@ -60,7 +61,34 @@ export function normalizeMdxPath(mdxPath) {
     normalized = mdxPath.slice(0, -1)
   }
 
-  return normalizeDocsPathSegments(normalized)
+  return normalized
+}
+
+export function normalizeMdxPath(mdxPath) {
+  return normalizeDocsPathSegments(sourceMdxPath(mdxPath))
+}
+
+// URLs use hyphens, but Nextra imports by the actual content route. Keep
+// that route intact, including mixed underscore/hyphen paths and API names.
+function contentRoutes(params) {
+  const routes = new Map()
+  for (const param of params) {
+    const source = sourceMdxPath(param.mdxPath)
+    const key = normalizeMdxPath(source).join("/")
+    const previous = routes.get(key)
+    if (previous && previous.join("/") !== source.join("/")) {
+      throw new Error(
+        `Conflicting docs routes "${previous.join("/")}" and "${source.join("/")}" normalize to "${key}". Rename one of the pages.`
+      )
+    }
+    routes.set(key, source)
+  }
+  return routes
+}
+
+export function resolveMdxPath(mdxPath, params) {
+  const normalized = normalizeMdxPath(mdxPath)
+  return contentRoutes(params).get(normalized.join("/")) ?? normalized
 }
 
 export function isDisabledMdxPath(mdxPath) {
@@ -80,6 +108,8 @@ function staticParamKey(param) {
 }
 
 export function expandStaticParams(params, options = {}) {
+  // Refuse ambiguous source pages before aliases can hide one of them.
+  contentRoutes(params)
   const includeIndexHtmlAliases =
     options.includeIndexHtmlAliases ?? process.env.NODE_ENV === "development"
   const includeDisabledParams =
@@ -119,6 +149,14 @@ export function expandStaticParams(params, options = {}) {
           mdxPath: [...aliasParam.mdxPath, "index.html"],
         })
       }
+    }
+
+    // Source links and the sidebar may retain a mixed spelling which is
+    // neither the canonical path nor its all-underscore alias.
+    const sourceParam = { ...param, mdxPath: sourceMdxPath(param.mdxPath) }
+    push(sourceParam)
+    if (includeIndexHtmlAliases) {
+      push({ ...sourceParam, mdxPath: [...sourceParam.mdxPath, "index.html"] })
     }
   }
 

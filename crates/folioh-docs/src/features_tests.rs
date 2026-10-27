@@ -1,39 +1,23 @@
 use super::*;
 
 #[test]
-fn doc_routes_are_gated_until_the_env_names_the_feature() {
-    assert_eq!(
-        disabled_doc_feature_for_route_in("versioning", ""),
-        Some("versions")
-    );
-    assert_eq!(
-        disabled_doc_feature_for_route_in("/versioning/", ""),
-        Some("versions")
-    );
-    assert_eq!(disabled_doc_feature_for_route_in("i18n", ""), Some("i18n"));
-    for route in ["quickstart", "roadmap", "landing", "guide/versioning"] {
-        assert_eq!(
-            disabled_doc_feature_for_route_in(route, ""),
-            None,
-            "{route}"
-        );
+fn authored_doc_routes_are_never_gated_by_their_name() {
+    for route in [
+        "versioning",
+        "/versioning/",
+        "i18n",
+        "quickstart",
+        "roadmap",
+        "guide/versioning",
+    ] {
+        for experimental in ["", "versions", " i18n , versions ", " , "] {
+            assert_eq!(
+                disabled_doc_feature_for_route_in(route, experimental),
+                None,
+                "{route}: {experimental}"
+            );
+        }
     }
-    assert_eq!(
-        disabled_doc_feature_for_route_in("versioning", "versions"),
-        None
-    );
-    assert_eq!(
-        disabled_doc_feature_for_route_in("i18n", "versions"),
-        Some("i18n")
-    );
-    assert_eq!(
-        disabled_doc_feature_for_route_in("i18n", " i18n , versions "),
-        None
-    );
-    assert_eq!(
-        disabled_doc_feature_for_route_in("versioning", " , "),
-        Some("versions")
-    );
 }
 
 #[test]

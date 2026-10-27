@@ -87,7 +87,13 @@ pub(super) fn render_function(func: &FunctionIR, level: usize, page: &Page, id: 
             Some(href) => format!("[`{}`]({href})", returns.ty),
             None => format!("`{}`", returns.ty),
         });
-        let label = if is_property { "Type" } else { "Returns" };
+        let label = if returns.is_generator {
+            "Yields"
+        } else if is_property {
+            "Type"
+        } else {
+            "Returns"
+        };
         parts.extend(labelled(label, linked, &returns.description));
     }
     for raise in &func.raises {

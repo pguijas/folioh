@@ -2,7 +2,7 @@
 //! plugin assets, the authoring contract, the search index, the preview
 //! examples, the link check and the LLM texts.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::Path;
 
 use folioh_config::DocsConfig;
@@ -11,7 +11,7 @@ use folioh_ir::ModuleIR;
 use folioh_mdx::MarkdownPage;
 use folioh_plugins::{contract_config_keys, ExtensionRegistry, Landing, PluginHost};
 use folioh_site::builder::{PreviewBuildRequest, PreviewExamples, SiteBuilder};
-use folioh_site::links::{check_links, BrokenLink, LinkCheckInput};
+use folioh_site::links::{check_fragments, check_links, BrokenLink, LinkCheckInput};
 use folioh_site::SiteError;
 
 use super::pages::{published_docs, published_modules};
@@ -34,6 +34,7 @@ pub fn finalize_generated_files(
     host: &PluginHost,
     config: &DocsConfig,
     project_dir: &Path,
+    source_routes: &BTreeSet<String>,
     registry: Option<&ExtensionRegistry>,
     refresh_previews: bool,
     report: &Report,
@@ -45,6 +46,8 @@ pub fn finalize_generated_files(
     }
     let mut diag = Vec::new();
     host.emit_assets(builder, config, &mut diag);
+    builder.sweep_plugin_pages(source_routes)?;
+    folioh_site::sidebar::apply_directory_orders(builder)?;
     let mut keys: std::collections::BTreeSet<String> = contract_config_keys()
         .into_iter()
         .map(str::to_string)
@@ -128,6 +131,22 @@ pub fn check_generated_links(
         site_routes: &site_routes,
         static_root: Some(&builder.build_dir.join("public")),
     })
+}
+
+/// Route checks plus exact anchors from the completed static export.
+pub fn check_exported_links(
+    builder: &SiteBuilder<'_>,
+    modules: &[ModuleIR],
+    docs: &[MarkdownPage],
+) -> Result<Vec<BrokenLink>, SiteError> {
+    let mut broken = check_generated_links(builder, modules, docs);
+    broken.extend(check_fragments(
+        &builder.content_dir,
+        &builder.output_dir,
+        &builder.docs_route_base(),
+        docs,
+    )?);
+    Ok(broken)
 }
 
 /// The `llms.txt` and `llms-full.txt` bodies the config asks for

@@ -20,6 +20,8 @@ fn arguments_take_the_annotation_then_the_doc_type_and_the_doc_description() {
     assert_eq!(g.args[1].default.as_deref(), Some("None"));
     assert_eq!(g.args[1].description, "the y. Defaults to None.");
     let returns = g.returns.as_ref().unwrap();
+    assert!(!returns.is_generator);
+    assert_eq!(returns.return_annotation, None);
     assert_eq!(
         (returns.ty.as_str(), returns.description.as_str()),
         ("str", "out")
@@ -28,6 +30,51 @@ fn arguments_take_the_annotation_then_the_doc_type_and_the_doc_description() {
     assert_eq!(g.visibility, "");
     assert_eq!(m.language, Language::Python);
     assert!(m.types.is_empty());
+}
+
+#[test]
+fn yields_keep_the_item_type_separate_from_the_return_annotation() {
+    for (style, text) in [
+        (DocstringStyle::Google, "Yields:\n    int: Each value."),
+        (
+            DocstringStyle::Numpy,
+            "Yields\n------\nint\n    Each value.",
+        ),
+        (DocstringStyle::Auto, ":yields int: Each value."),
+    ] {
+        let body = text
+            .lines()
+            .map(|line| format!("    {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for annotation in [" -> Iterator[int]", ""] {
+            let source = format!(
+                "def values(){annotation}:\n    \"\"\"Values.\n\n{body}\n    \"\"\"\n    yield 1\n"
+            );
+            let m = module(&source, style);
+            let f = &m.functions[0];
+            let value = f.returns.as_ref().unwrap();
+            assert!(value.is_generator, "{style:?}");
+            assert_eq!(value.ty, "int", "{style:?}");
+            assert_eq!(value.description, "Each value.");
+            assert_eq!(
+                value.return_annotation.as_deref(),
+                (!annotation.is_empty()).then_some("Iterator[int]")
+            );
+            assert_eq!(
+                folioh_ir::signature::display_signature(f, true),
+                format!("def values(){annotation}")
+            );
+        }
+    }
+    let m = module("def values() -> Iterator[int]:\n    \"\"\"Values.\n\n    Yields:\n        Each value.\n    \"\"\"\n    yield 1\n", DocstringStyle::Google);
+    let value = m.functions[0].returns.as_ref().unwrap();
+    assert!(value.is_generator);
+    assert!(
+        value.ty.is_empty(),
+        "an iterator annotation is not the yielded item type"
+    );
+    assert_eq!(value.return_annotation.as_deref(), Some("Iterator[int]"));
 }
 
 #[test]

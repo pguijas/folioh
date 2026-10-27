@@ -8,6 +8,7 @@ pub mod batch;
 pub mod finalize;
 pub mod pages;
 pub mod preview;
+mod source_hash;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -39,6 +40,7 @@ use crate::ui::steps::{
 };
 use crate::ui::text::{BOLD, DIM, GREEN, YELLOW};
 use crate::ui::Ui;
+use crate::workspace_lock::WorkspaceLease;
 use crate::PluginFactory;
 
 use pages::GenerateArgs;
@@ -62,6 +64,8 @@ pub struct BuildOptions {
     pub plugins: Vec<PluginFactory>,
     /// `folioh serve`: LLM files go to `public/`, no export, `ready in` row.
     pub serve: bool,
+    /// The live server's port, included in workspace-occupancy diagnostics.
+    pub serve_port: Option<u16>,
     pub verbose: bool,
     /// `--config`; `docs.yaml` by default.
     pub config_file: String,
@@ -117,6 +121,8 @@ pub(crate) fn load_config(
 pub enum BuildError {
     #[error("{0}")]
     ConfigMissing(String),
+    #[error("interrupted (exit {0})")]
+    Interrupted(u8),
     #[error("{0}")]
     Failed(String),
 }
@@ -125,6 +131,7 @@ impl From<BuildError> for CliError {
     fn from(err: BuildError) -> CliError {
         match err {
             BuildError::ConfigMissing(text) => CliError::Message(text),
+            BuildError::Interrupted(code) => CliError::Exit(code),
             BuildError::Failed(text) => CliError::Build(text),
         }
     }
@@ -333,6 +340,21 @@ pub fn build_site(
             config_path.display()
         )));
     }
+    let build_dir = opts
+        .build_dir_override
+        .clone()
+        .unwrap_or_else(|| project_dir.join(".build"));
+    // Keep the lease alive through export or the entire on_ready serve loop.
+    // Claim before any plugin hook or template preparation can mutate it.
+    let lease = WorkspaceLease::acquire(
+        &build_dir,
+        if opts.serve { "serve" } else { "build" },
+        opts.serve_port,
+    )
+    .map_err(BuildError::Failed)?;
+    if let Some(message) = &lease.recovered {
+        report.warning(message);
+    }
     if noop {
         // The seam writes no site; a green transcript over an empty output
         // directory must never read as a real build.
@@ -416,10 +438,6 @@ pub fn build_site(
         report.detail(version_note, DIM);
     }
 
-    let build_dir = opts
-        .build_dir_override
-        .clone()
-        .unwrap_or_else(|| project_dir.join(".build"));
     let template = resolve_template_dir(&resolved, &build_dir)?;
     let build_context = build_manifest_context(
         &config_path,
@@ -462,6 +480,14 @@ pub fn build_site(
         report.warning(warning);
     }
     report.step_ok("Template", ".build/ workspace ready");
+    if opts.verbose {
+        for (target, reason) in &injection.skipped {
+            report.detail(
+                &format!("Skipped template injection: {target} ({reason})"),
+                DIM,
+            );
+        }
+    }
 
     let generation = pages::generate_content_pages(
         GenerateArgs {
@@ -492,6 +518,7 @@ pub fn build_site(
         &host,
         &resolved,
         project_dir,
+        &generation.source_routes(),
         Some(&registry),
         opts.previews,
         &report,
@@ -552,28 +579,33 @@ pub fn build_site(
         );
     }
 
-    let spinner = report.spinner("Links", "checking internal links", None);
-    let broken = finalize::check_generated_links(&builder, &sources.modules, &sources.docs);
-    drop(spinner);
-    if broken.is_empty() {
-        report.step_ok("Links", "valid");
-    } else {
-        report.step(
-            "Links",
-            &count_phrase(broken.len(), "broken internal link", None),
-            "!",
-            YELLOW,
-            BOLD_YELLOW,
-        );
-        for link in &broken {
-            report.detail(
-                &format!(
-                    "{}:{} → {}",
-                    link.source_page, link.line_number, link.target
-                ),
+    let report_links = |broken: &[folioh_site::links::BrokenLink]| {
+        if broken.is_empty() {
+            report.step_ok("Links", "valid");
+        } else {
+            report.step(
+                "Links",
+                &count_phrase(broken.len(), "broken internal link", None),
+                "!",
                 YELLOW,
+                BOLD_YELLOW,
             );
+            for link in broken {
+                report.detail(
+                    &format!(
+                        "{}:{} → {}",
+                        link.source_page, link.line_number, link.target
+                    ),
+                    YELLOW,
+                );
+            }
         }
+    };
+    if opts.serve || noop {
+        let spinner = report.spinner("Links", "checking internal links", None);
+        let broken = finalize::check_generated_links(&builder, &sources.modules, &sources.docs);
+        drop(spinner);
+        report_links(&broken);
     }
 
     // The row names the phase it is in, because the check takes an instant and
@@ -626,6 +658,12 @@ pub fn build_site(
         host.post_build(Path::new(&resolved.output_dir), &mut diag);
         for warning in &diag {
             report.warning(warning);
+        }
+        if !noop {
+            let spinner = report.spinner("Links", "checking routes and rendered fragments", None);
+            let broken = finalize::check_exported_links(&builder, &sources.modules, &sources.docs)?;
+            drop(spinner);
+            report_links(&broken);
         }
         report.step_ok("Export", &export.detail());
         if !opts.quiet {

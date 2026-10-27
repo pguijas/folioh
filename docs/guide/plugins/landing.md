@@ -2,6 +2,13 @@
 
 *Configure the optional homepage that appears before the documentation app.*
 
+<DocPreview
+  title="Landing page example"
+  example="landing-page"
+  description="Open a complete homepage generated from its example configuration."
+  height={420}
+/>
+
 Folioh starts as a docs-first site. The landing page is a built-in integration:
 it is compiled into `folioh` and stays inert until a `landing:` section appears
 in `docs.yaml`. When you want a public entry point, add the section and keep

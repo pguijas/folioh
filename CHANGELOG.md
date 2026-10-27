@@ -3,6 +3,67 @@
 All notable user-facing changes are recorded here. Folioh follows semantic
 versioning while the public CLI, configuration, and plugin contracts stabilize.
 
+## 0.3.5 — 2026-10-27
+
+### Added
+
+- Documentation directories can order sidebar children with `_meta.yaml`; builds and live sessions refresh metadata without a compiled-in page list.
+
+- Verbose builds list skipped template injection targets and their reasons.
+
+- Exported 404 pages offer documentation search when its index is available.
+
+### Fixed
+
+- Repository workflow intermediates expire after one day and successful deployments and releases remove their consumed artifacts.
+
+- Preview workflow Rust caches use explicit prefixes distinct from main and release jobs, including fallback restores.
+
+- Client navigation from a nested missing URL keeps Next.js stylesheets and later JavaScript chunks rooted at the deployment path.
+
+- Pastel social-card monograms render with the image renderer’s font, avoiding missing glyphs on build hosts without desktop fonts.
+
+- Rust documentation reads literal `include_str!` files and conditional `cfg_attr` doc values, warns on missing files, and refreshes included prose during warm builds and serve sessions.
+
+- Catalog links respect custom docs routes. Default landing API links require a published reference index, and relative link checking shares the renderer’s canonical path calculation.
+
+- Embedded examples inherit the parent social-image origin and deployment path, omit generated images without a public origin, and refresh when that origin changes. Language and landing guides link their examples.
+
+- reStructuredText docstring notices render as callouts, including labelled unknown directives, while preserving deprecation versions and code.
+
+- API pages name the trait and target type in impl headings, omit placeholder module summaries and render dunder names literally in prose.
+
+- Interactive initialization asks for the docstring style only when Python sources are detected.
+
+- Roadmap project keys other than `docs` use a neutral marker consistently.
+
+- Generator documentation renders Yields with the yielded item type while preserving Python iterator return annotations in signatures. JavaScript reads `@yields` and `@yield` into the same IR distinction.
+
+- The previews navbar shows the configured project logo. A missing custom favicon fails the build with its requested path instead of silently using the default icon.
+
+- Theme bootstrap data is shared in a cacheable, content-versioned asset instead of being repeated in every HTML page. Saved themes still apply before hydration.
+
+- Unix development servers stop their child process tree on interruption and print `Server stopped.`; init cancels terminal and piped prompts without leaving raw mode or writing files.
+
+- Static builds report missing heading and API fragments with source filenames and lines, including anchors removed in warm builds.
+
+- HTTP navigation keeps directory URLs after gallery and sidebar hops while
+  exported file links retain their index targets. The fallback 404 loads search
+  and navigation scripts from the deployment root.
+
+- Removing an integration section removes its generated pages, Markdown mirrors
+  and standalone routes on the next warm build while preserving authored pages.
+
+- Authored guides named `i18n.md` or `versioning.md` publish normally while the
+  corresponding experimental configuration features remain disabled.
+
+- Guides with underscores in their filenames or directories render their content
+  at canonical and alias URLs instead of a not-found page. Markdown download
+  links work at both URLs; ambiguous underscore/hyphen routes report a conflict.
+- Builds, development servers and cleanup commands refuse to rewrite a workspace
+  held by another Folioh process, report its PID and serve port, and recover
+  leftover owner records after the lock is released.
+
 ## 0.3.4 — 2026-10-19
 
 ### Added

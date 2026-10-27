@@ -221,6 +221,7 @@ fn docs_route_base_relocates_the_route_and_rewrites_every_reference() {
     assert!(!build.join("app/docs").exists());
     assert!(build.join("app/reference/docs/layout.tsx").exists());
     let page = read(&build, "app/reference/docs/[[...mdxPath]]/page.jsx");
+    assert!(read(&build, "app/previews/layout.tsx").contains("getPageMap(\"/reference/docs\")"));
     assert!(
         read(&build, "app/reference/docs/layout.tsx").contains("getPageMap(\"/reference/docs\")")
     );
@@ -421,6 +422,24 @@ fn next_config_i18n_base_path_and_versions() {
     let current = common::prepared(dir.path(), &plain, &template, "current-preset-marker");
     assert_eq!(
         read(&current, "components/theme-configurator.tsx"),
+        "const configuredDefaultPresetId = \"beacon\"\n"
+    );
+
+    // The shared model receives the same project preset while the client
+    // wrapper keeps its stable import surface.
+    common::write(
+        &template,
+        "components/theme-configurator.tsx",
+        "export * from '@/theme/theme-config'\n",
+    );
+    common::write(
+        &template,
+        "theme/theme-config.ts",
+        "const configuredDefaultPresetId = \"pastel\" // __FOLIOH_THEME_PRESET__\n",
+    );
+    let shared = common::prepared(dir.path(), &plain, &template, "shared-preset-marker");
+    assert_eq!(
+        read(&shared, "theme/theme-config.ts"),
         "const configuredDefaultPresetId = \"beacon\"\n"
     );
 
@@ -1195,6 +1214,9 @@ fn theme_logo_is_an_image_in_the_logo_slot_or_a_clear_error() {
     let docs = read(&build, "app/docs/layout.tsx");
     let at = docs.find(image).unwrap();
     assert!(docs[at..].contains("{\"Acme\"}</span>"), "{docs}");
+    let previews = read(&build, "app/previews/layout.tsx");
+    let at = previews.find(image).unwrap();
+    assert!(previews[at..].contains("{\"Acme\"}</span>"), "{previews}");
 
     let missing = common::config(dir.path(), "theme:\n  logo: assets/nope.svg\n");
     let build = dir.path().join("build-missing");
@@ -1212,7 +1234,7 @@ fn theme_logo_is_an_image_in_the_logo_slot_or_a_clear_error() {
 }
 
 #[test]
-fn theme_logo_replaces_the_landing_monogram_and_shows_once_in_the_docs_navbar() {
+fn theme_logo_replaces_monograms_in_landing_docs_and_previews() {
     let dir = tempfile::tempdir().unwrap();
     let template = common::bundled_template();
     common::write(dir.path(), "assets/logo mark.svg", "<svg/>");
@@ -1233,6 +1255,11 @@ fn theme_logo_replaces_the_landing_monogram_and_shows_once_in_the_docs_navbar() 
     let docs = read(&build, "app/docs/layout.tsx");
     assert_eq!(docs.matches("<img ").count(), 1, "{docs}");
     assert_eq!(docs.matches("\"/logo%20mark.svg\"").count(), 1, "{docs}");
+    let previews = read(&build, "app/previews/layout.tsx");
+    assert_eq!(previews.matches("<img ").count(), 1, "{previews}");
+    assert!(previews
+        .contains("(process.env.NEXT_PUBLIC_FOLIOH_BASE_PATH ?? \"\") + \"/logo%20mark.svg\""));
+    assert!(!previews.contains("folioh-monogram") && !previews.contains("HEADER_LOGO"));
 
     // Without a logo the landing navbar keeps the monogram.
     let plain = common::config(dir.path(), "");
@@ -1244,6 +1271,35 @@ fn theme_logo_replaces_the_landing_monogram_and_shows_once_in_the_docs_navbar() 
         "{navbar}"
     );
     assert!(!read(&build, "app/docs/layout.tsx").contains("<img "));
+    let previews = read(&build, "app/previews/layout.tsx");
+    assert!(!previews.contains("<img ") && previews.contains("folioh-monogram"));
+    assert!(!previews.contains("HEADER_LOGO"));
+}
+
+#[test]
+fn missing_favicons_fail_with_the_requested_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let template = common::bundled_template();
+    std::fs::create_dir(dir.path().join("assets")).unwrap();
+    // A directory cannot silently select the bundled icon either.
+    for (index, path) in ["assets/missing.ico", "assets"].into_iter().enumerate() {
+        let config = common::config(dir.path(), &format!("theme:\n  favicon: {path}\n"));
+        let build = dir.path().join(format!("missing-favicon-{index}"));
+        TemplateWorkspace::new(&template, &build, None)
+            .prepare(false)
+            .unwrap();
+        let error = TemplateConfigInjector::new(&config, &build, &template)
+            .inject()
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            error,
+            format!(
+                "theme.favicon does not exist: {}",
+                dir.path().canonicalize().unwrap().join(path).display()
+            )
+        );
+    }
 }
 
 #[test]

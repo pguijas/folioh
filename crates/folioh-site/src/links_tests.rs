@@ -1,6 +1,30 @@
 use super::*;
 
 #[test]
+fn checked_and_rendered_relative_routes_are_the_same() {
+    for (href, source, expected) in [
+        (
+            "steps/../intro.md?tab=x#heading",
+            "guide/setup",
+            "/manual/guide/intro?tab=x#heading",
+        ),
+        ("../index.mdx", "guide/setup", "/manual"),
+        (
+            "./api-reference/pkg_common/index.mdx",
+            "index",
+            "/manual/api-reference/pkg_common",
+        ),
+    ] {
+        let rendered = resolve_href(href, source, "/manual").unwrap();
+        assert_eq!(rendered, expected);
+        assert_eq!(
+            normalize_target(href, source, "/manual"),
+            normalize_target(&rendered, source, "/manual")
+        );
+    }
+}
+
+#[test]
 fn normalize_target_cases() {
     let cases: [(&str, &str, &str, Option<&str>); 21] = [
         ("https://example.com", "index", "/docs", None),

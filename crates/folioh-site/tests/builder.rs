@@ -13,6 +13,31 @@ fn read(path: &Path) -> String {
 }
 
 #[test]
+fn a_plugin_page_stays_owned_across_watch_passes_and_is_swept_when_disabled() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = common::config(dir.path(), "");
+    let build = dir.path().join("build");
+    let template = dir.path().join("template");
+    let source_routes = BTreeSet::from(["index".to_string()]);
+    {
+        let mut builder = common::builder(&config, &template, &build);
+        builder.write_page("index", "# Guide").unwrap();
+        builder
+            .write_page("roadmap", "# Generated roadmap")
+            .unwrap();
+        builder.sweep_plugin_pages(&source_routes).unwrap();
+        builder.write_page("index", "# Edited guide").unwrap();
+        builder.sweep_plugin_pages(&source_routes).unwrap();
+    }
+    let mut builder = common::builder(&config, &template, &build);
+    builder.register_route("index");
+    builder.sweep_plugin_pages(&source_routes).unwrap();
+    assert!(!build.join("content/roadmap.mdx").exists());
+    assert!(!build.join("public/_folioh/markdown/roadmap.md").exists());
+    assert_eq!(read(&build.join("content/index.mdx")), "# Edited guide");
+}
+
+#[test]
 fn write_page_resolves_relative_links_in_the_page_and_its_mirror() {
     let dir = tempfile::tempdir().unwrap();
     let config = common::config(dir.path(), "template:\n  docs_route_base: /reference\n");
@@ -144,6 +169,92 @@ fn list_and_remove_pages() {
         .emitted_routes()
         .contains("gallery/one-item/compared"));
     builder.remove_page("nonexistent").unwrap();
+}
+
+#[test]
+fn frontend_routes_share_the_authoring_and_link_checker_contract() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = common::config(
+        dir.path(),
+        "template:\n  docs_route_base: /reference/docs\n",
+    );
+    let build = dir.path().join("build");
+    common::write(&build, "lib/folioh-routes.json", "{\"foliohRoutes\":true}");
+    let mut builder = common::builder(&config, &dir.path().join("template"), &build);
+    let routes = [
+        "index",
+        "components/callout",
+        "api-reference/index",
+        "api-reference/rust/demo_module",
+    ];
+    for route in routes {
+        builder.write_page(route, "# Page\n").unwrap();
+    }
+    let contract = builder
+        .write_authoring_contract(&BTreeSet::new(), "now")
+        .unwrap();
+    let data_path = build.join("lib/folioh-routes.json");
+    let data: serde_json::Value = serde_json::from_str(&read(&data_path)).unwrap();
+    let public: serde_json::Value = serde_json::from_str(&read(&contract)).unwrap();
+    assert_eq!(data["routes"], public["routes"]);
+    assert_eq!(data["apiReference"], true);
+    let helper = common::bundled_template().join("lib/docs-routes.js");
+    if std::process::Command::new("node")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        return;
+    }
+    let script = "const {pathToFileURL}=await import('node:url'); const {docsRoute,defaultDocsRoutes}=await import(pathToFileURL(process.argv[1]).href); const d=JSON.parse(process.argv[2]); console.log(JSON.stringify({urls:JSON.parse(process.argv[3]).map(r=>docsRoute(r,d)),defaults:defaultDocsRoutes(d),withoutApi:defaultDocsRoutes({...d,apiReference:false})}))";
+    let output = std::process::Command::new("node")
+        .args(["--input-type=module", "-e", script])
+        .arg(&helper)
+        .arg(data.to_string())
+        .arg(serde_json::to_string(&routes).unwrap())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    for (route, url) in routes.iter().zip(result["urls"].as_array().unwrap()) {
+        assert_eq!(url, &builder.content_route_to_docs_url(route));
+    }
+    assert_eq!(result["defaults"].as_array().unwrap().len(), 3);
+    assert_eq!(result["withoutApi"].as_array().unwrap().len(), 2);
+    let links = result["urls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|url| {
+            format!(
+                "[Page]({})\n<a href=\"{}\">Page</a>\n",
+                url.as_str().unwrap(),
+                url.as_str().unwrap()
+            )
+        })
+        .collect::<String>();
+    builder.write_page("index", &links).unwrap();
+    let pages: Vec<String> = routes.iter().map(|r| r.to_string()).collect();
+    assert!(
+        folioh_site::links::check_links(&folioh_site::links::LinkCheckInput {
+            content_dir: &build.join("content"),
+            pages: &pages,
+            docs_route_base: "/reference/docs",
+            site_routes: &std::collections::HashSet::new(),
+            static_root: None
+        })
+        .is_empty()
+    );
+    // Custom unmarked data remains under template ownership.
+    std::fs::write(&data_path, "{\"custom\":true}").unwrap();
+    builder
+        .write_authoring_contract(&BTreeSet::new(), "later")
+        .unwrap();
+    assert_eq!(read(&data_path), "{\"custom\":true}");
 }
 
 #[test]
@@ -559,7 +670,8 @@ fn search_index_documents_urls_and_cache() {
     builder.write_search_index().unwrap();
     let index = build.join("lib/search-index.ts");
     let content = read(&index);
-    assert!(content.starts_with("export interface FoliohSearchDocument {\n  url: string\n  title: string\n  content: string\n}\n\nexport const foliohSearchDocuments: FoliohSearchDocument[] = [\n"));
+    assert!(content.starts_with("export interface FoliohSearchDocument {\n  url: string\n  title: string\n  content: string\n}\n"));
+    assert!(content.contains("export const foliohSearchDocuments: FoliohSearchDocument[] = [\n"));
     assert!(
         content.contains("\"/docs/configuration/\"")
             && content.contains("\"title\": \"Configuration\"")
@@ -578,11 +690,15 @@ fn search_index_documents_urls_and_cache() {
 
     let route_config = common::config(
         dir.path(),
-        "template:\n  docs_route_base: /reference/docs\n",
+        "template:\n  docs_route_base: /reference/docs\nsearch:\n  placeholder: 'Find \"API\"'\n",
     );
     let mut routed = common::builder(&route_config, &template, &build);
     routed.write_search_index().unwrap();
     let content = read(&index);
+    assert!(content.contains(&format!(
+        "export const foliohSearchPlaceholder = {}",
+        serde_json::to_string("Find \"API\"").unwrap()
+    )));
     assert!(
         content.contains("\"/reference/docs/configuration/\"")
             && !content.contains("\"/docs/configuration/\"")
@@ -773,7 +889,19 @@ fn bundled_generated_site_example_is_a_folioh_project() {
         .collect();
     names.sort();
     names.dedup();
-    assert_eq!(names, ["generated-site"]);
+    assert_eq!(
+        names,
+        ["generated-site", "javascript", "landing-page", "rust"]
+    );
+    for name in &names {
+        assert!(
+            repo.join("docs/examples")
+                .join(name)
+                .join("docs.yaml")
+                .is_file(),
+            "missing example: {name}"
+        );
+    }
     let example = repo.join("docs/examples/generated-site");
     assert!(example.join("docs.yaml").is_file());
     let mut files: Vec<String> = SiteBuilder::preview_example_source_paths(&example)

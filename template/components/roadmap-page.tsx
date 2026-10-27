@@ -38,10 +38,9 @@ const SAFE_KEY = /^[A-Za-z0-9_-]+$/
  * Decide the collapsed state before the first paint.
  *
  * The static HTML renders every card open, and the query string only reaches
- * React after hydration — so arriving at `/roadmap/?product=agents` from a
- * product landing painted both roadmaps and then pulled ~460px out from under
- * the reader when the other card closed. That is the largest movement on the
- * page and nobody authored it.
+ * React after hydration. Arriving at `/roadmap/?product=<key>` must select
+ * that project's card before paint, so the other cards do not briefly open
+ * and move the content when hydration finishes.
  *
  * So the page ships one rule per project and five lines that set an attribute,
  * the same shape the template already uses to settle the theme before paint.

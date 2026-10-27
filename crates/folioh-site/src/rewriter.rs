@@ -10,7 +10,7 @@ use flate2::read::GzDecoder;
 use folioh_config::canonicalize_lenient;
 use serde_json::Value;
 
-use crate::fs::files_under;
+use crate::fs::{files_under, write_text_if_changed};
 use crate::re;
 
 /// Rewrites one exported site in place.
@@ -19,7 +19,7 @@ pub struct StaticAssetRewriter {
     pub output_dir: PathBuf,
 }
 
-const PORTABLE_PREFIX: &str = r#"(()=>{let e="object"==typeof document&&document.currentScript&&document.currentScript.getAttribute("src")||"";let t=e.match(/^((?:.*\/)?_next\/)static\/chunks\//);return t?t[1]:"/_next/"})()"#;
+const PORTABLE_PREFIX: &str = r#"(()=>{let e="object"==typeof document&&document.currentScript&&document.currentScript.getAttribute("src")||"";if(e&&/^https?:$/.test(location.protocol))e=new URL(e,document.baseURI).pathname;let t=e.match(/^((?:.*\/)?_next\/)static\/chunks\//);return t?t[1]:"/_next/"})()"#;
 
 /// `(scheme, netloc, path, query, fragment)` as Python's `urlsplit` sees a URL.
 fn urlsplit(url: &str) -> (String, String, String, String, String) {
@@ -90,9 +90,24 @@ impl StaticAssetRewriter {
 
     /// Rewrite every `.html`, `.txt` and `.js` file; returns warnings.
     pub fn fix_asset_paths(&self) -> std::io::Result<Vec<String>> {
+        self.fix_asset_paths_with_base_path("")
+    }
+
+    /// As `fix_asset_paths`, with the deployment root used by the fallback
+    /// 404 page, which a host can serve at an arbitrary missing URL.
+    pub fn fix_asset_paths_with_base_path(&self, base_path: &str) -> std::io::Result<Vec<String>> {
         let mut warnings = Vec::new();
         self.copy_opengraph_images_with_png_extension()?;
         let has_file_search = self.write_file_search_fallback()?;
+        let has_navigation = files_under(&self.output_dir)
+            .iter()
+            .any(|path| path.extension().is_some_and(|ext| ext == "html"));
+        if has_navigation {
+            write_text_if_changed(
+                &self.output_dir.join("_folioh-navigation.js"),
+                include_str!("navigation.js"),
+            )?;
+        }
         for path in files_under(&self.output_dir) {
             let name = path
                 .file_name()
@@ -113,8 +128,12 @@ impl StaticAssetRewriter {
             // root-absolute URLs.
             let root_404 = path == self.output_dir.join("404.html");
             let mut content = original.clone();
-            if has_file_search && name.ends_with(".html") && !root_404 {
-                content = Self::inject_file_search_script(&content);
+            let asset_base = if root_404 { base_path } else { "" };
+            if has_file_search && name.ends_with(".html") {
+                content = Self::inject_script(&content, "_folioh-search.js", asset_base);
+            }
+            if has_navigation && name.ends_with(".html") {
+                content = Self::inject_script(&content, "_folioh-navigation.js", asset_base);
             }
             content = Self::rewrite_opengraph_image_urls(&content);
             let patched = if root_404 {
@@ -213,10 +232,21 @@ impl StaticAssetRewriter {
         let serialized = re(r#"(\\?"(data-href|href|poster|src)\\?":\\?")(/[^"\\]+)(\\?")"#);
         content = serialized
             .replace_all(&content, |caps: &regex::Captures| {
+                // Flight stylesheets load after client navigation, so their
+                // base is the browser's current route, not this payload file.
+                if caps[3].contains("/_next/") {
+                    return caps[0].to_string();
+                }
                 format!(
                     "{}{}{}",
                     &caps[1],
-                    self.rewrite_file_url(&caps[3], fpath, &caps[2] == "data-href"),
+                    // Flight props describe router destinations rather than
+                    // file loads; keep directory URLs for client navigation.
+                    self.rewrite_file_url(
+                        &caps[3],
+                        fpath,
+                        matches!(&caps[2], "href" | "data-href"),
+                    ),
                     &caps[4]
                 )
             })
@@ -319,6 +349,16 @@ impl StaticAssetRewriter {
         }
         let mut patched = content.replacen("\"/_next/\"", PORTABLE_PREFIX, 1);
         let ident = r"[A-Za-z_$][\w$]*";
+        // Registration keys must use the same stable HTTP paths as the
+        // loader; mixing relative and root paths leaves modules unhydrated.
+        patched = re(&format!(r#"src:({ident})\.getAttribute\("src"\)"#))
+            .replace_all(&patched, |caps: &regex::Captures| {
+                format!(
+                    r#"src:/^https?:$/.test(location.protocol)?(()=>{{let u=new URL({0}.src);return u.pathname+u.search+u.hash}})():{0}.getAttribute("src")"#,
+                    &caps[1]
+                )
+            })
+            .into_owned();
         let simple = re(&format!(
             r#"function ({ident})\(e\)\{{return`\$\{{({ident})\}}\$\{{(e|e\.split\("/"\)\.map\(e=>encodeURIComponent\(e\)\)\.join\("/"\))\}}\$\{{({ident})\}}`\}}"#
         ));
@@ -441,11 +481,19 @@ impl StaticAssetRewriter {
         result
     }
 
-    fn inject_file_search_script(content: &str) -> String {
-        if content.contains("_folioh-search.js") {
+    fn inject_script(content: &str, name: &str, base_path: &str) -> String {
+        let existing = re(&format!(
+            r#"(?i)<script\b[^>]*\bsrc=["'][^"']*{}(?:\?[^"']*)?["']"#,
+            regex::escape(name)
+        ));
+        if existing.is_match(content) {
             return content.to_string();
         }
-        let script = "<script defer src=\"/_folioh-search.js\"></script>";
+        let src = format!("{}/{name}", base_path.trim_end_matches('/'))
+            .replace('&', "&amp;")
+            .replace('"', "&quot;")
+            .replace('<', "&lt;");
+        let script = format!("<script defer src=\"{src}\"></script>");
         if content.contains("<head>") {
             content.replacen("<head>", &format!("<head>{script}"), 1)
         } else if content.contains("</head>") {

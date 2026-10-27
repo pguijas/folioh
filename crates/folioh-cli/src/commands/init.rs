@@ -1,6 +1,7 @@
 //! `folioh init`: project detection (`pyproject.toml`, `Cargo.toml`,
-//! `package.json` and the layout on disk), the detected summary, the two
-//! prompts, the generated `docs.yaml`, `docs/index.md`, the workflow files
+//! `package.json` and the layout on disk), the detected summary, the
+//! prompts (docstring style for Python, then visual preset), the generated
+//! `docs.yaml`, `docs/index.md`, the workflow files
 //! and the ready output.
 
 use std::collections::BTreeSet;
@@ -13,6 +14,7 @@ use anstyle::Style;
 
 use crate::cli::InitArgs;
 use crate::error::CliError;
+use crate::signals::StopSignals;
 use crate::ui::banner::{banner, current_news_item};
 use crate::ui::panel::{center_block, Panel};
 use crate::ui::select::{ask_choice, can_use_arrow_select, Cancelled, Choice, NewsTicker};
@@ -729,20 +731,28 @@ fn ask_choices(
     ui: &Ui,
     ticker: Option<&NewsTicker>,
     arrow: bool,
+    interrupt: &StopSignals,
+    has_python: bool,
 ) -> Result<(&'static str, &'static str), Cancelled> {
-    let style = ask_choice(
-        ui,
-        ticker,
-        arrow,
-        "Docstring style",
-        &DOCSTRING_STYLES,
-        DEFAULT_DOCSTRING_STYLE,
-        DOCSTRING_TITLE,
-    )?;
+    let style = if has_python {
+        ask_choice(
+            ui,
+            ticker,
+            arrow,
+            interrupt,
+            "Docstring style",
+            &DOCSTRING_STYLES,
+            DEFAULT_DOCSTRING_STYLE,
+            DOCSTRING_TITLE,
+        )?
+    } else {
+        DEFAULT_DOCSTRING_STYLE
+    };
     let preset = ask_choice(
         ui,
         ticker,
         arrow,
+        interrupt,
         "Visual preset",
         &THEME_PRESETS,
         DEFAULT_THEME_PRESET,
@@ -779,6 +789,7 @@ pub fn run(ui: &Ui, args: InitArgs) -> Result<(), CliError> {
 
     let mut info = detect_project(ui, &target);
     info.repo = detect_git_remote(ui, &target);
+    let interrupt = (!args.yes).then(StopSignals::install).transpose()?;
     let arrow = !args.yes && can_use_arrow_select();
     let news_item = current_news_item();
     let rows_below_news = print_intro(ui, &info, &target, news_item);
@@ -794,7 +805,22 @@ pub fn run(ui: &Ui, args: InitArgs) -> Result<(), CliError> {
             }
             None => ui.blank(),
         }
-        match ask_choices(ui, ticker.as_ref(), arrow) {
+        let interrupt = interrupt
+            .as_ref()
+            .expect("interactive init installs signals");
+        let choices = ask_choices(
+            ui,
+            ticker.as_ref(),
+            arrow,
+            interrupt,
+            info.python_path.is_some(),
+        );
+        let choices = if interrupt.exit_code().is_some() {
+            Err(Cancelled::ByUser)
+        } else {
+            choices
+        };
+        match choices {
             Ok((style, preset)) => {
                 info.docstring_style = style.to_string();
                 info.theme_preset = preset.to_string();
@@ -807,6 +833,11 @@ pub fn run(ui: &Ui, args: InitArgs) -> Result<(), CliError> {
                 ui.print_styled(
                     DIM_YELLOW,
                     match reason {
+                        Cancelled::ByUser
+                            if interrupt.exit_code().is_some_and(|code| code != 130) =>
+                        {
+                            "Init aborted. No files changed."
+                        }
                         Cancelled::ByUser => "^C Init aborted. No files changed.",
                         Cancelled::InputClosed => {
                             "Init aborted: stdin ended before an answer. No files changed; \
@@ -814,7 +845,7 @@ pub fn run(ui: &Ui, args: InitArgs) -> Result<(), CliError> {
                         }
                     },
                 );
-                return Err(CliError::Exit(1));
+                return Err(CliError::Exit(interrupt.exit_code().unwrap_or(1)));
             }
         }
     }

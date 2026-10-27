@@ -1,5 +1,5 @@
 //! `/** ... */` comments: the prose before the first tag, then the
-//! `@param`, `@returns`, `@throws`, `@deprecated` and `@example` blocks.
+//! `@param`, `@returns`, `@yields`, `@throws`, `@deprecated` and `@example` blocks.
 //! JSDoc is where a JavaScript signature keeps its types, so this is what
 //! fills `ArgIR.ty`, `ReturnIR` and `RaiseIR`.
 
@@ -21,6 +21,7 @@ pub struct JsDoc {
     pub params: Vec<Param>,
     pub returns_type: String,
     pub returns_description: String,
+    pub is_generator: bool,
     pub throws: Vec<(String, String)>,
     pub deprecated: String,
     pub examples: Vec<String>,
@@ -93,9 +94,10 @@ pub fn parse(raw: &str) -> JsDoc {
         };
         match tag {
             "param" => doc.params.push(param(&ty, &rest)),
-            "return" | "returns" => {
+            "return" | "returns" | "yield" | "yields" => {
                 doc.returns_type = ty;
                 doc.returns_description = rest;
+                doc.is_generator = matches!(tag, "yield" | "yields");
             }
             "throw" | "throws" => doc.throws.push((ty, rest)),
             "deprecated" => {

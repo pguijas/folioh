@@ -171,7 +171,7 @@ export function ComponentIndexPreview({ title }: { title: string }) {
           <TabItem label="Install">
             <Code language="bash">
               curl -fsSL
-              https://raw.githubusercontent.com/pguijas/folio/main/install.sh |
+              https://raw.githubusercontent.com/pguijas/folioh/main/install.sh |
               sh
             </Code>
           </TabItem>

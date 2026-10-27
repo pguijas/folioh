@@ -2,11 +2,12 @@
 //! `Source Code` tree grouped by language, hidden and unlisted entries.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 use folioh_config::{language_label, slug_label, slugify};
 use indexmap::IndexMap;
 
-use crate::re;
+use crate::{re, Result, SiteError};
 
 /// One published Markdown page as the sidebar sees it.
 pub struct SidebarPage<'a> {
@@ -36,15 +37,18 @@ pub struct SidebarInput<'a> {
     pub pages: &'a [SidebarPage<'a>],
     /// `sidebar.default_collapsed`; folders start collapsed when true.
     pub default_collapsed: bool,
+    /// Directory-relative child route names read from `_meta.yaml`.
+    pub directory_orders: &'a DirectoryOrders,
 }
 
 /// A `_meta.ts` value.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(untagged)]
 pub enum MetaValue {
+    /// `true`/`false` (the `collapsed` flag); deserialize before YAML string coercion.
+    Bool(bool),
     /// A page title or expanded folder title.
     Str(String),
-    /// `true`/`false` (the `collapsed` flag).
-    Bool(bool),
     /// A nested object (hidden entry, collapsed folder, separator).
     Object(Meta),
 }
@@ -55,140 +59,201 @@ pub type Meta = IndexMap<String, MetaValue>;
 const SOURCE_CODE_SLUG: &str = "api-reference";
 const SOURCE_CODE_TITLE: &str = "Source Code";
 
-/// A compiled-in page order entry.
-pub enum OrderEntry {
-    /// `(slug, title)` of a page.
-    Page(&'static str, &'static str),
-    /// `(slug, title, children)` of a directory with its own order.
-    Dir(&'static str, &'static str, &'static [OrderEntry]),
+/// Directory routes mapped to ordered immediate child routes.
+pub type DirectoryOrders = BTreeMap<String, Vec<String>>;
+
+/// Metadata inputs under the same documentation roots used by Markdown discovery.
+pub fn directory_order_files(roots: &[String]) -> Result<Vec<PathBuf>> {
+    fn walk(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+        for entry in std::fs::read_dir(dir).map_err(|e| SiteError::io(dir, e))? {
+            let entry = entry.map_err(|e| SiteError::io(dir, e))?;
+            let path = entry.path();
+            if entry
+                .file_type()
+                .map_err(|e| SiteError::io(&path, e))?
+                .is_dir()
+            {
+                walk(&path, files)?;
+            } else if entry.file_name() == "_meta.yaml" {
+                files.push(path);
+            }
+        }
+        Ok(())
+    }
+    let mut files = Vec::new();
+    for root in roots.iter().map(Path::new).filter(|p| p.is_dir()) {
+        walk(root, &mut files)?;
+    }
+    files.sort();
+    Ok(files)
 }
 
-use OrderEntry::{Dir, Page};
-
-/// Folioh's own docs order; it applies to every project.
-/// The reader's path first (install, first build, configure, write), then
-/// the site's parts, then migration and help, then the contributor pages.
-/// Components follow the groups of the components overview; plugins list
-/// the ones this release ships before the ones it does not.
-pub static DOC_PAGE_ORDER: &[OrderEntry] = &[
-    Page("index", "Overview"),
-    Page("introduction", "Introduction"),
-    Page("why-folioh", "Why Folioh"),
-    Page("installation", "Installation"),
-    Page("quickstart", "Quick Start"),
-    Page("configuration", "Configuration"),
-    Page("cli", "CLI Reference"),
-    Page("languages", "Languages"),
-    Page("docstrings", "Writing Doc Comments"),
-    Dir(
-        "components",
-        "Components",
-        &[
-            Page("index", "Overview"),
-            Page("terminal-session", "TerminalSession"),
-            Page("config-panel", "ConfigPanel"),
-            Page("build-artifact", "BuildArtifact"),
-            Page("command-grid", "CommandGrid"),
-            Page("before-after", "BeforeAfter"),
-            Page("checklist", "Checklist"),
-            Page("hook-map", "HookMap"),
-            Page("accordion", "Accordion"),
-            Page("tabs", "Tabs"),
-            Page("steps", "Steps"),
-            Page("timeline", "Timeline"),
-            Page("code-group", "CodeGroup"),
-            Page("preview-code", "PreviewCode"),
-            Page("example-tabs", "ExampleTabs"),
-            Page("callout", "Callout"),
-            Page("feature-cards", "FeatureCard & CardGrid"),
-            Page("file-tree", "FileTree"),
-            Page("doc-preview", "DocPreview"),
-            Page("browser-frame", "BrowserFrame"),
-            Page("mermaid", "Mermaid"),
-            Page("math", "Math (LaTeX)"),
-            Page("code-blocks", "Code Blocks"),
-            Page("stat-strip", "StatStrip"),
-            Page("pull-quote", "PullQuote"),
-            Page("compare-matrix", "CompareMatrix"),
-            Page("swot", "Swot"),
-            Page("kbd", "Kbd"),
-            Page("marker", "Marker"),
-            Page("term", "Term"),
-            Page("class-overview", "ClassOverview"),
-            Page("method-accordion", "MethodAccordion"),
-            Page("param-table", "ParamTable"),
-            Page("type-badge", "TypeBadge"),
-            Page("deprecation-notice", "DeprecationNotice"),
-            Page("theme-configurator", "Theme picker"),
-            Page("copy-page-button", "Page Actions"),
-        ],
-    ),
-    Dir(
-        "theming",
-        "Theming",
-        &[
-            Page("index", "Overview"),
-            Page("personalization", "Personalization"),
-            Page("theme-packages", "Theme Packages"),
-            Page("custom-templates", "Custom Templates"),
-        ],
-    ),
-    Dir(
-        "deployment",
-        "Deployment",
-        &[
-            Page("index", "Overview"),
-            Page("static-hosts", "Static Hosts"),
-            Page("github-pages", "GitHub Pages"),
-            Page("ci-cd", "CI/CD"),
-        ],
-    ),
-    Dir(
-        "plugins",
-        "Plugins",
-        &[
-            Page("index", "Overview"),
-            Page("roadmap", "Roadmap"),
-            Page("openapi", "OpenAPI"),
-            Page("landing", "Landing Page"),
-            Page("catalog", "Catalog"),
-            Page("authoring", "Writing Plugins"),
-            Page("trust", "Trust & Safety"),
-        ],
-    ),
-    Page("migration", "Migration Guide"),
-    Page("troubleshooting", "Troubleshooting"),
-    Page("architecture", "Architecture"),
-    Page("developing", "Developer Guide"),
-];
-
-impl OrderEntry {
-    fn slug(&self) -> &'static str {
-        match self {
-            Page(slug, _) | Dir(slug, _, _) => slug,
+/// Read and validate each directory's order, without requiring an index page.
+pub fn read_directory_orders(roots: &[String]) -> Result<DirectoryOrders> {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Metadata {
+        order: Vec<serde_yaml_ng::Value>,
+    }
+    let mut result = DirectoryOrders::new();
+    let mut owners = BTreeMap::new();
+    // Read separately per root: overlapping declarations must not silently win.
+    for root in roots {
+        for path in directory_order_files(std::slice::from_ref(root))? {
+            let fail = |message: String| SiteError::Value(format!("{}: {message}", path.display()));
+            let raw = std::fs::read_to_string(&path).map_err(|e| SiteError::io(&path, e))?;
+            let metadata: Metadata =
+                serde_yaml_ng::from_str(&raw).map_err(|e| fail(e.to_string()))?;
+            let relative = path.strip_prefix(root).expect("metadata under its root");
+            let index = folioh_mdx::source_route(&relative.with_file_name("index.md"));
+            let directory = index.strip_suffix("/index").unwrap_or("").to_string();
+            if let Some(first) = owners.insert(directory.clone(), path.clone()) {
+                return Err(fail(format!(
+                    "duplicate sidebar order for directory '{directory}'; also declared in {}",
+                    first.display()
+                )));
+            }
+            let mut order = Vec::new();
+            let mut seen = BTreeSet::new();
+            for value in metadata.order {
+                let name = value
+                    .as_str()
+                    .ok_or_else(|| fail("order entries must be strings".into()))?;
+                if name.chars().any(char::is_control)
+                    || name.is_empty()
+                    || name.trim() != name
+                    || matches!(name, "." | "..")
+                    || name.contains(['/', '\\'])
+                    || name.ends_with(".md")
+                    || name.ends_with(".mdx")
+                {
+                    return Err(fail(format!(
+                        "order entries must be immediate child routes without extensions: {name:?}"
+                    )));
+                }
+                let route = folioh_mdx::source_route(Path::new(&format!("{name}.md")));
+                if !seen.insert(route.clone()) {
+                    return Err(fail(format!("duplicate order entry: {name:?}")));
+                }
+                order.push(route);
+            }
+            result.insert(directory, order);
         }
     }
-    fn title(&self) -> &'static str {
-        match self {
-            Page(_, title) | Dir(_, title, _) => title,
-        }
-    }
+    Ok(result)
 }
 
-/// The declared `(slug, title)` order of a docs directory; empty when nothing
-/// declares that path.
-pub fn declared_order(path: &[&str]) -> Vec<(&'static str, &'static str)> {
-    let mut entries = DOC_PAGE_ORDER;
-    for segment in path {
-        match entries
-            .iter()
-            .find(|e| e.slug() == *segment && matches!(e, Dir(..)))
-        {
-            Some(Dir(_, _, children)) => entries = children,
-            _ => return Vec::new(),
+fn apply_directory_order(mut meta: Meta, order: Option<&Vec<String>>) -> Meta {
+    let mut ordered = Meta::new();
+    for slug in order.into_iter().flatten() {
+        if let Some(value) = meta.shift_remove(slug) {
+            ordered.insert(slug.clone(), value);
         }
     }
-    entries.iter().map(|e| (e.slug(), e.title())).collect()
+    ordered.extend(meta);
+    ordered
+}
+
+/// Apply declarations again when a built-in adds metadata after page generation.
+fn order_meta_ts(
+    directory: &str,
+    text: &str,
+    config: &folioh_config::DocsConfig,
+    orders: &DirectoryOrders,
+    mut fallback: Meta,
+) -> Result<String> {
+    let Some(order) = orders.get(directory) else {
+        return Ok(text.to_string());
+    };
+    let body = text
+        .trim()
+        .strip_prefix("export default")
+        .unwrap_or(text)
+        .trim()
+        .trim_end_matches(';');
+    let mut meta: Meta = if body.is_empty() {
+        std::mem::take(&mut fallback)
+    } else {
+        serde_yaml_ng::from_str(body).map_err(|e| {
+            SiteError::Value(format!(
+                "cannot apply _meta.yaml order to {directory}/_meta.ts: {e}"
+            ))
+        })?
+    };
+    for slug in order {
+        if !meta.contains_key(slug) {
+            if let Some(value) = fallback.shift_remove(slug) {
+                meta.insert(slug.clone(), value);
+            }
+        }
+    }
+    let hidden_index = if !directory.is_empty()
+        && matches!(meta.get("index"), Some(MetaValue::Object(value)) if value.get("display") == Some(&MetaValue::Str("hidden".into())))
+    {
+        meta.shift_remove("index")
+    } else {
+        None
+    };
+    let mut meta = apply_directory_order(meta, Some(order));
+    if directory.is_empty() {
+        meta = apply_nav_order(meta, &config.nav);
+    }
+    if let Some(index) = hidden_index {
+        meta.shift_insert(0, "index".into(), index);
+    }
+    Ok(meta_to_ts(&meta))
+}
+
+/// Order the completed tree, including pages emitted after the source pass.
+pub fn apply_directory_orders(builder: &crate::builder::SiteBuilder<'_>) -> Result<()> {
+    let orders = read_directory_orders(&builder.config.source.docs)?;
+    if orders.is_empty() {
+        return Ok(());
+    }
+    let mut documents = Vec::new();
+    for path in crate::fs::files_under(&builder.content_dir)
+        .into_iter()
+        .filter(|p| p.extension().is_some_and(|e| e == "mdx"))
+    {
+        let mut page =
+            folioh_mdx::parse_markdown_file(&path).map_err(|e| SiteError::Value(e.to_string()))?;
+        page.route = folioh_mdx::source_route(
+            &path
+                .strip_prefix(&builder.content_dir)
+                .expect("content page")
+                .with_extension("md"),
+        );
+        documents.push(page);
+    }
+    let pages: Vec<_> = documents
+        .iter()
+        .map(|page| SidebarPage {
+            route: &page.route,
+            title: page.frontmatter.get("title").and_then(|v| v.as_str()),
+            unlisted: page.unlisted,
+        })
+        .collect();
+    let docs = DocMeta::collect(&pages, builder.config.sidebar.default_collapsed, &orders);
+    for directory in orders.keys() {
+        if !builder.content_dir.join(directory).is_dir() {
+            continue;
+        }
+        let parts: Vec<_> = directory
+            .split('/')
+            .filter(|p| !p.is_empty())
+            .map(str::to_string)
+            .collect();
+        let fallback = docs.build_meta_for_dir(&parts);
+        let text = order_meta_ts(
+            directory,
+            &builder.read_meta(directory)?,
+            builder.config,
+            &orders,
+            fallback,
+        )?;
+        builder.write_meta(directory, &text)?;
+    }
+    Ok(())
 }
 
 /// The emoji class stripped from sidebar labels.
@@ -280,15 +345,17 @@ struct DocMeta {
     dirs_by_dir: BTreeMap<DirPath, IndexMap<String, String>>,
     unlisted: BTreeSet<Vec<String>>,
     default_collapsed: bool,
+    directory_orders: DirectoryOrders,
 }
 
 impl DocMeta {
-    fn collect(pages: &[SidebarPage], default_collapsed: bool) -> Self {
+    fn collect(pages: &[SidebarPage], default_collapsed: bool, orders: &DirectoryOrders) -> Self {
         let mut this = DocMeta {
             pages_by_dir: BTreeMap::new(),
             dirs_by_dir: BTreeMap::new(),
             unlisted: BTreeSet::new(),
             default_collapsed,
+            directory_orders: orders.clone(),
         };
         let emoji = emoji_pattern();
         for page in pages {
@@ -377,15 +444,17 @@ impl DocMeta {
         if !path.is_empty() && remaining.shift_remove("index").is_some() {
             ordered.insert("index".to_string(), hidden());
         }
-        let segments: Vec<&str> = path.iter().map(String::as_str).collect();
-        for (slug, _) in declared_order(&segments) {
-            if let Some(title) = remaining.shift_remove(slug) {
-                ordered.insert(slug.to_string(), self.entry_value(path, slug, &title));
-            }
-        }
-        for (slug, title) in &remaining {
-            ordered.insert(slug.clone(), self.entry_value(path, slug, title));
-        }
+        let entries = remaining
+            .into_iter()
+            .map(|(slug, title)| {
+                let value = self.entry_value(path, &slug, &title);
+                (slug, value)
+            })
+            .collect();
+        ordered.extend(apply_directory_order(
+            entries,
+            self.directory_orders.get(&path.join("/")),
+        ));
         ordered
     }
 
@@ -516,11 +585,9 @@ fn generate_meta_from_tree(
     default_collapsed: bool,
     leading: &Meta,
     titles: &BTreeMap<String, String>,
+    orders: &DirectoryOrders,
 ) {
     let mut meta = Meta::new();
-    for (key, value) in leading {
-        meta.insert(key.clone(), value.clone());
-    }
     for (key, subtree) in tree {
         match subtree {
             Tree::Node(children) if !children.is_empty() => {
@@ -533,6 +600,7 @@ fn generate_meta_from_tree(
                     default_collapsed,
                     &Meta::new(),
                     titles,
+                    orders,
                 );
             }
             _ => {
@@ -540,7 +608,9 @@ fn generate_meta_from_tree(
             }
         }
     }
-    result.insert(format!("{prefix}/_meta.ts"), meta_to_ts(&meta));
+    let mut ordered = leading.clone();
+    ordered.extend(apply_directory_order(meta, orders.get(prefix)));
+    result.insert(format!("{prefix}/_meta.ts"), meta_to_ts(&ordered));
 }
 
 /// Every `_meta.ts` the content tree needs: content-relative path to file text.
@@ -548,7 +618,7 @@ pub fn generate_meta_files(input: &SidebarInput) -> BTreeMap<String, String> {
     let mut result = BTreeMap::new();
     let mut root = Meta::new();
     if !input.pages.is_empty() {
-        let docs = DocMeta::collect(input.pages, input.default_collapsed);
+        let docs = DocMeta::collect(input.pages, input.default_collapsed, input.directory_orders);
         root = docs.build_meta_for_dir(&[]);
         for dir in docs.all_dirs().into_iter().filter(|d| !d.is_empty()) {
             result.insert(
@@ -563,8 +633,8 @@ pub fn generate_meta_files(input: &SidebarInput) -> BTreeMap<String, String> {
             folder_meta(SOURCE_CODE_TITLE, input.default_collapsed),
         );
     }
-    move_to_end(&mut root, "contributing");
     move_to_end(&mut root, SOURCE_CODE_SLUG);
+    let root = apply_directory_order(root, input.directory_orders.get(""));
     let root = apply_nav_order(root, input.nav);
     result.insert("_meta.ts".to_string(), meta_to_ts(&root));
     if !input.modules.is_empty() {
@@ -577,6 +647,7 @@ pub fn generate_meta_files(input: &SidebarInput) -> BTreeMap<String, String> {
             input.default_collapsed,
             &leading,
             &titles,
+            input.directory_orders,
         );
     }
     result

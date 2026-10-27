@@ -210,7 +210,7 @@ fn ids_between(text: &str, start: &str, end: &str) -> Vec<String> {
 
 #[test]
 fn tune_options_match_the_bundled_configurator() {
-    let configurator = template_text("components/theme-configurator.tsx");
+    let configurator = template_text("theme/theme-config.ts");
     for (key, block) in [
         ("fontId", "fontOptions"),
         ("colorId", "colorOptions"),
@@ -243,7 +243,7 @@ fn preset_tables_match_the_bundled_template() {
         .collect();
     builtins.sort();
     assert_eq!(builtins, BUILTIN_THEME_PRESETS);
-    let configurator = template_text("components/theme-configurator.tsx");
+    let configurator = template_text("theme/theme-config.ts");
     let from = configurator.find("const LEGACY_PRESET_IDS").unwrap();
     let block = &configurator[from..];
     let block = &block[..block.find("\n}\n").unwrap()];

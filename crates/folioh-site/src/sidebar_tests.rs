@@ -29,13 +29,36 @@ fn generate(
     pages: &[SidebarPage],
     collapsed: bool,
 ) -> BTreeMap<String, String> {
+    generate_ordered(nav, modules, pages, collapsed, &DirectoryOrders::new())
+}
+
+fn generate_ordered(
+    nav: &[&str],
+    modules: &[SidebarModule],
+    pages: &[SidebarPage],
+    collapsed: bool,
+    orders: &DirectoryOrders,
+) -> BTreeMap<String, String> {
     let nav: Vec<String> = nav.iter().map(|s| s.to_string()).collect();
     generate_meta_files(&SidebarInput {
         nav: &nav,
         modules,
         pages,
         default_collapsed: collapsed,
+        directory_orders: orders,
     })
+}
+
+fn orders(entries: &[(&str, &[&str])]) -> DirectoryOrders {
+    entries
+        .iter()
+        .map(|(dir, names)| {
+            (
+                dir.to_string(),
+                names.iter().map(|s| s.to_string()).collect(),
+            )
+        })
+        .collect()
 }
 
 /// Top-level `"key": "value"` string entries of a `_meta.ts`, in order.
@@ -185,8 +208,8 @@ fn nested_doc_pages_hide_their_index_and_list_siblings() {
     assert_eq!(
         parse(components),
         vec![
-            ("callout".to_string(), "Callout".to_string()),
-            ("mermaid".to_string(), "Mermaid".to_string())
+            ("mermaid".to_string(), "Mermaid".to_string()),
+            ("callout".to_string(), "Callout".to_string())
         ]
     );
 }
@@ -200,7 +223,13 @@ fn root_order_is_declared_then_discovery_then_trailing_entries() {
         page("components/index", "Components"),
         page("introduction", "Introduction"),
     ];
-    let files = generate(&[], &[], &pages, false);
+    let files = generate_ordered(
+        &[],
+        &[],
+        &pages,
+        false,
+        &orders(&[("", &["index", "introduction", "installation", "quickstart"])]),
+    );
     assert_eq!(
             files["_meta.ts"],
             "export default {\n  \"index\": \"Overview\",\n  \"introduction\": \"Introduction\",\n  \"installation\": \"Installation\",\n  \"quickstart\": \"Quick Start\",\n  \"components\": \"Components\",\n}"
@@ -212,7 +241,23 @@ fn root_order_is_declared_then_discovery_then_trailing_entries() {
         page("p2pfl_ws", "P2PFL Web Services"),
         page("tutorials/index", "Tutorials"),
     ];
-    let files = generate(&[], &[module("mylib/core", "python")], &pages, false);
+    let files = generate_ordered(
+        &[],
+        &[module("mylib/core", "python")],
+        &pages,
+        false,
+        &orders(&[(
+            "",
+            &[
+                "index",
+                "components",
+                "p2pfl_ws",
+                "tutorials",
+                "contributing",
+                "api-reference",
+            ],
+        )]),
+    );
     assert_eq!(
         keys(&files["_meta.ts"]),
         vec![
@@ -233,7 +278,13 @@ fn declared_slugs_keep_their_position_but_use_the_page_title() {
         page("installation", "Installation"),
         page("quickstart", "First Experiment"),
     ];
-    let files = generate(&[], &[], &pages, false);
+    let files = generate_ordered(
+        &[],
+        &[],
+        &pages,
+        false,
+        &orders(&[("", &["index", "installation", "quickstart"])]),
+    );
     assert_eq!(
         parse(&files["_meta.ts"]),
         vec![
@@ -407,44 +458,155 @@ fn declared_child_groups_order_their_own_pages() {
                 .zip(entries)
                 .map(|(route, (_, title))| page(route, title)),
         );
-        let files = generate(&[], &[], &pages, false);
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/guide");
+        let orders = read_directory_orders(&[source.to_string_lossy().into_owned()]).unwrap();
+        let files = generate_ordered(&[], &[], &pages, false, &orders);
         assert_eq!(files[&format!("{dir}/_meta.ts")], expected);
     }
 }
 
 #[test]
-fn declared_order_returns_pairs_at_every_depth_and_nothing_for_undeclared_paths() {
-    assert!(declared_order(&[]).contains(&("theming", "Theming")));
+fn directory_orders_cover_nested_plugin_pages_and_generated_modules() {
+    let pages = [
+        page("index", "Home"),
+        page("reference/deep/alpha", "Authored title"),
+        unlisted("reference/deep/beta", "Hidden plugin page"),
+        page("reference/deep/gamma", "Generated plugin page"),
+    ];
+    let modules = [
+        module("rust/demo/alpha", "rust"),
+        module("rust/demo/beta", "rust"),
+    ];
+    let orders = orders(&[
+        ("", &["api-reference", "reference", "future", "index"]),
+        ("reference/deep", &["beta", "gamma", "future", "alpha"]),
+        ("api-reference/rust/demo", &["beta", "future", "alpha"]),
+    ]);
+    let files = generate_ordered(&["Home"], &modules, &pages, true, &orders);
     assert_eq!(
-        declared_order(&["theming"])
-            .iter()
-            .map(|(s, _)| *s)
-            .collect::<Vec<_>>(),
-        vec![
-            "index",
-            "personalization",
-            "theme-packages",
-            "custom-templates"
-        ]
-    );
-    let plugins = declared_order(&["plugins"]);
-    let slugs: Vec<&str> = plugins.iter().map(|(s, _)| *s).collect();
-    assert_eq!(
-        slugs.iter().position(|s| *s == "trust"),
-        slugs.iter().position(|s| *s == "authoring").map(|i| i + 1)
+        keys(&files["_meta.ts"]),
+        ["index", "api-reference", "reference"]
     );
     assert_eq!(
-        &slugs[..4],
-        ["index", "roadmap", "openapi", "landing"],
-        "the plugins this release ships come first"
+        keys(&files["reference/deep/_meta.ts"]),
+        ["beta", "gamma", "alpha"]
     );
-    let root: Vec<&str> = declared_order(&[]).iter().map(|(s, _)| *s).collect();
-    let at = |slug: &str| root.iter().position(|s| *s == slug).unwrap();
-    assert!(at("quickstart") < at("configuration") && at("configuration") < at("components"));
-    assert!(at("migration") < at("architecture") && at("troubleshooting") < at("developing"));
-    for path in [&["plugins", "landing"][..], &["theming", "nope"], &["nope"]] {
-        assert!(declared_order(path).is_empty(), "{path:?}");
+    assert_hidden(&files["reference/deep/_meta.ts"], "beta");
+    assert!(files["reference/deep/_meta.ts"].contains("Authored title"));
+    assert_eq!(
+        keys(&files["api-reference/rust/demo/_meta.ts"]),
+        ["beta", "alpha"]
+    );
+    assert!(!files.values().any(|text| text.contains("future")));
+    // A built-in can append an emitted page after the initial sidebar pass.
+    let project = tempfile::tempdir().unwrap();
+    std::fs::write(
+        project.path().join("_meta.yaml"),
+        "order: [late, reference, index]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join("docs.yaml"),
+        "project: {name: Test}\nsource: {docs: [.]}\n",
+    )
+    .unwrap();
+    let config = folioh_config::load_docs_config(&project.path().join("docs.yaml"))
+        .unwrap()
+        .config
+        .resolve_paths(project.path())
+        .unwrap();
+    let late =
+        files["_meta.ts"].trim_end_matches('}').to_string() + "  \"late\": \"Late page\",\n}";
+    let rendered = order_meta_ts(
+        "",
+        &late,
+        &config,
+        &read_directory_orders(&config.source.docs).unwrap(),
+        Meta::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        keys(&rendered),
+        ["late", "reference", "index", "api-reference"]
+    );
+    assert!(rendered.contains("\"collapsed\": true"));
+    let mut config = config;
+    config.nav = vec!["Home".into()];
+    assert_eq!(
+        keys(
+            &order_meta_ts(
+                "",
+                &late,
+                &config,
+                &read_directory_orders(&config.source.docs).unwrap(),
+                Meta::new()
+            )
+            .unwrap()
+        ),
+        ["index", "late", "reference", "api-reference"]
+    );
+    std::fs::create_dir(project.path().join("nested")).unwrap();
+    std::fs::write(
+        project.path().join("nested/_meta.yaml"),
+        "order: [beta, index, alpha]\n",
+    )
+    .unwrap();
+    let nested = "export default {\n  \"index\": {\"display\": \"hidden\"},\n  \"alpha\": \"Alpha\",\n  \"beta\": \"Beta\",\n}";
+    let nested = order_meta_ts(
+        "nested",
+        nested,
+        &config,
+        &read_directory_orders(&config.source.docs).unwrap(),
+        Meta::new(),
+    )
+    .unwrap();
+    assert_eq!(keys(&nested), ["index", "beta", "alpha"]);
+    assert_hidden(&nested, "index");
+}
+
+#[test]
+fn directory_metadata_validates_inputs_and_rejects_conflicting_roots() {
+    use std::fs;
+    let dir = tempfile::tempdir().unwrap();
+    let roots = [dir.path().join("first"), dir.path().join("second")];
+    for root in &roots {
+        fs::create_dir_all(root.join("deep_dir/no-index")).unwrap();
     }
+    let path = roots[0].join("deep_dir/no-index/_meta.yaml");
+    fs::write(&path, "order: [last, README, first]\n").unwrap();
+    let inputs = [roots[0].to_string_lossy().into_owned()];
+    assert_eq!(
+        read_directory_orders(&inputs).unwrap(),
+        orders(&[("deep_dir/no-index", &["last", "index", "first"])])
+    );
+    for invalid in [
+        "order: nope",
+        "order: [1]",
+        "order: null",
+        "other: []",
+        "order: []\nextra: true",
+        "order: [first, first]",
+        "order: [README, index]",
+        "order: [../escape]",
+        "order: [child/page]",
+        "order: [page.md]",
+        "order: ['']",
+    ] {
+        fs::write(&path, invalid).unwrap();
+        let error = read_directory_orders(&inputs).unwrap_err().to_string();
+        assert!(error.contains(path.to_str().unwrap()), "{invalid}: {error}");
+    }
+    fs::write(&path, "order: []\n").unwrap();
+    let other = roots[1].join("deep_dir/no-index/_meta.yaml");
+    fs::write(&other, "order: [first]\n").unwrap();
+    let inputs = roots.map(|p| p.to_string_lossy().into_owned());
+    let error = read_directory_orders(&inputs).unwrap_err().to_string();
+    assert!(
+        error.contains("duplicate sidebar order")
+            && error.contains(path.to_str().unwrap())
+            && error.contains(other.to_str().unwrap()),
+        "{error}"
+    );
 }
 
 #[test]

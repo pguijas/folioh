@@ -106,7 +106,7 @@ pub(crate) fn parse(text: &str) -> Result<Docstring, ParseError> {
             (whole.start(), whole.end(), index)
         })
         .collect();
-    for (j, &(_, end, index)) in matches.iter().enumerate() {
+    for (j, &(start, end, index)) in matches.iter().enumerate() {
         let next_start = matches.get(j + 1).map_or(meta_chunk.len(), |m| m.0);
         let body = &meta_chunk[end..next_start];
         let (_, key, kind) = SECTIONS[index];
@@ -118,13 +118,8 @@ pub(crate) fn parse(text: &str) -> Result<Docstring, ParseError> {
                 description: body.trim().to_string(),
             }),
             Deprecated => {
-                let description = body
-                    .split_once('\n')
-                    .map(|(_, rest)| cleandoc(rest).trim().to_string())
-                    .unwrap_or_default();
-                doc.meta.push(Meta::Other {
-                    key: key.to_string(),
-                    description,
+                doc.meta.push(Meta::Directive {
+                    text: meta_chunk[start..next_start].trim().to_string(),
                 });
             }
         }

@@ -39,6 +39,11 @@ Navigation, swatches, manual adjustments and mode changes apply to the page and 
 
 The front preview keeps its manual adjustments; each neighbouring preview shows the exact recipe it will select. Changing to another variant starts from its configured style. Selecting a swatch also clears manual adjustments. The site's preset uses `theme.tune` and `theme.radius`. A saved recipe removed from the catalog remains reachable and editable until another variant replaces its family's draft, without adding a swatch. Stored preset IDs remain compatible with earlier versions.
 
+The stored theme is applied before hydration by one content-versioned script
+shared across pages. Its URL changes when the preset data or bootstrap behavior
+changes, so it can be cached across visits. The page keeps the default theme CSS
+as a fallback; the preset tables are not repeated in each HTML file.
+
 ### Customize
 
 The final circle in the variant row, or the `c` key outside a text field, opens Customize inside the same centered popup. Its size, backdrop and position stay the same. Its controls update both the preview and the page immediately. Back or Escape returns to the variants; every change is already saved.

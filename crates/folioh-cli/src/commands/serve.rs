@@ -27,6 +27,7 @@ use crate::pipeline::{
     build_site, load_config, plugin_host, preview, tracer_from_env, BuildError, BuildOptions,
     Report, Site,
 };
+use crate::signals::{stop_child, StopSignals};
 use crate::ui::text::{BOLD, DIM, GREEN, RED, YELLOW};
 use crate::ui::Ui;
 use crate::PluginFactory;
@@ -66,6 +67,7 @@ pub fn run(ui: &Ui, args: ServeArgs, plugins: &[PluginFactory]) -> Result<(), Cl
     let tracer = tracer_from_env(ui);
     let opts = BuildOptions {
         serve: true,
+        serve_port: Some(args.port),
         verbose: args.verbose,
         clean: args.clean,
         previews: args.previews,
@@ -87,6 +89,14 @@ fn watched_roots(cfg: &WatchConfig, project_dir: &std::path::Path) -> Vec<PathBu
         .flat_map(|l| l.roots.iter().cloned())
         .chain(cfg.doc_roots.iter().cloned())
         .collect();
+    for input in &cfg.source_files {
+        // Watch a directory, so deleting/recreating an input stays observable.
+        if let Some(parent) = input.parent().filter(|path| path.is_dir()) {
+            if !roots.iter().any(|root| parent.starts_with(root)) {
+                roots.push(parent.to_path_buf());
+            }
+        }
+    }
     roots = with_preview_examples(roots, project_dir);
     for plugin_root in &cfg.plugin_roots {
         if !roots
@@ -123,6 +133,14 @@ fn watch_config(site: &Site<'_>) -> WatchConfig {
     let examples = site.project_dir.join("docs").join("examples");
     WatchConfig {
         languages,
+        source_files: site
+            .sources
+            .modules
+            .iter()
+            .flat_map(|module| {
+                folioh_docs::source_dependencies(std::path::Path::new(&module.source_file))
+            })
+            .collect(),
         doc_roots: existing(&config.source.docs),
         plugin_roots: site.host.watch_dirs(config),
         preview_examples: examples.is_dir().then_some(examples),
@@ -164,6 +182,7 @@ fn serve_site(
         let mut out = std::io::stdout().lock();
         let _ = writeln!(out, "{text}");
     });
+    let interrupt = StopSignals::install()?;
     let child = site.builder.serve(args.port, args.kill_existing, relay)?;
     if args.open {
         let url = format!("http://localhost:{}", args.port);
@@ -180,7 +199,7 @@ fn serve_site(
         Ok(watching) => watching,
         Err(err) => {
             if let Some(mut child) = child {
-                let _ = child.kill();
+                let _ = stop_child(&mut child);
             }
             return Err(BuildError::Failed(err.to_string()));
         }
@@ -199,22 +218,39 @@ fn serve_site(
             }
         }
     };
-    let server_exit: Arc<Mutex<Option<ExitStatus>>> = Arc::new(Mutex::new(None));
+    let server_exit: Arc<Mutex<Option<Result<ExitStatus, String>>>> = Arc::new(Mutex::new(None));
     let watched_exit = Arc::clone(&server_exit);
     thread::scope(|scope| {
         // The watcher lives with the server: when the child exits the
         // watcher drops, the channel closes and the loop below returns.
+        let interrupt = &interrupt;
         scope.spawn(move || {
-            match child {
-                Some(mut child) => {
-                    if let Ok(status) = child.wait() {
-                        *watched_exit.lock().unwrap() = Some(status);
+            let mut child = child;
+            loop {
+                if interrupt.exit_code().is_some() {
+                    if let Some(child) = child.as_mut() {
+                        *watched_exit.lock().unwrap() =
+                            Some(stop_child(child).map_err(|err| err.to_string()));
+                    }
+                    break;
+                }
+                if let Some(child) = child.as_mut() {
+                    match child.try_wait() {
+                        Ok(Some(status)) => {
+                            *watched_exit.lock().unwrap() = Some(Ok(status));
+                            break;
+                        }
+                        Ok(None) => {}
+                        Err(err) => {
+                            // A wait error cannot prove that the child is
+                            // still unreaped; do not signal a recycled group.
+                            *watched_exit.lock().unwrap() = Some(Err(err.to_string()));
+                            break;
+                        }
                     }
                 }
-                // No server (the test runtime): watch until the process ends.
-                None => loop {
-                    thread::park();
-                },
+                // This also makes the no-op runtime's watcher interruptible.
+                thread::sleep(Duration::from_millis(25));
             }
             drop(watcher);
         });
@@ -228,7 +264,16 @@ fn serve_site(
         );
     });
     // The dev server dying mid-session is a failed run, not a clean exit.
-    let exit = *server_exit.lock().unwrap();
+    let exit = server_exit
+        .lock()
+        .unwrap()
+        .take()
+        .transpose()
+        .map_err(BuildError::Failed)?;
+    if let Some(code) = interrupt.exit_code() {
+        ui.print("Server stopped.");
+        return Err(BuildError::Interrupted(code));
+    }
     match exit {
         Some(status) if !status.success() => {
             Err(BuildError::Failed(format!("dev server {status}")))
@@ -236,3 +281,7 @@ fn serve_site(
         _ => Ok(()),
     }
 }
+
+#[cfg(test)]
+#[path = "serve_tests.rs"]
+mod tests;

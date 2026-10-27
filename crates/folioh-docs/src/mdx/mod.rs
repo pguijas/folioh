@@ -3,10 +3,11 @@
 
 mod class;
 mod function;
+pub(crate) mod rest;
 mod type_item;
 
 pub(crate) use function::{decorated_signature, display_name};
-pub(crate) use type_item::{member_table, type_signature};
+pub(crate) use type_item::{member_table, type_signature, type_title};
 
 use folioh_config::API_REFERENCE_SLUG;
 use folioh_ir::{DocstringIR, FunctionIR, ModuleIR, VarIR, REEXPORT};
@@ -223,11 +224,7 @@ pub fn api_reference_index_to_mdx(modules: &[ModuleIR]) -> String {
                 .unwrap_or(&route);
             json!({
                 "name": module.name,
-                "description": if module.docstring.short_description.is_empty() {
-                    "Module documentation."
-                } else {
-                    module.docstring.short_description.as_str()
-                },
+                "description": module.docstring.short_description,
                 "href": format!("./{relative}/"),
                 "classCount": module.classes.len(),
                 "functionCount": module.functions.len(),
@@ -247,12 +244,12 @@ fn tail(docstring: &DocstringIR, page: &Page) -> Vec<String> {
     let mut parts: Vec<String> = docstring.examples.iter().map(|ex| page.fence(ex)).collect();
     if !docstring.notes.is_empty() {
         parts.push("**Notes:**\n".to_string());
-        parts.extend(
-            docstring
-                .notes
-                .iter()
-                .map(|note| format!("{}\n", escape_mdx(note))),
-        );
+        parts.extend(docstring.notes.iter().map(|note| {
+            format!(
+                "{}\n",
+                rest::render(note, 1).unwrap_or_else(|| escape_mdx(note))
+            )
+        }));
     }
     parts
 }
@@ -260,6 +257,15 @@ fn tail(docstring: &DocstringIR, page: &Page) -> Vec<String> {
 /// Short and long description as escaped prose parts.
 /// The summary and body, their headings no shallower than `floor`.
 fn prose(docstring: &DocstringIR, floor: usize) -> Vec<String> {
+    let combined = [&docstring.short_description, &docstring.long_description]
+        .into_iter()
+        .filter(|text| !text.is_empty())
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    if let Some(rendered) = rest::render(&combined, floor) {
+        return vec![format!("{rendered}\n")];
+    }
     [&docstring.short_description, &docstring.long_description]
         .into_iter()
         .filter(|text| !text.is_empty())

@@ -142,6 +142,8 @@ pub(crate) enum Meta {
         snippet: Option<String>,
         description: String,
     },
+    /// A directive whose argument and indentation must survive style parsing.
+    Directive { text: String },
     /// Any other section (`note`, `notes`, `see_also`, `deprecation`, ...).
     Other { key: String, description: String },
 }
@@ -258,6 +260,12 @@ fn project(doc: Docstring) -> ParsedDocstring {
                 if !text.is_empty() {
                     out.examples.push(text.to_string());
                 }
+            }
+            Meta::Directive { text } => {
+                if !out.long_description.is_empty() {
+                    out.long_description.push_str("\n\n");
+                }
+                out.long_description.push_str(&text);
             }
             Meta::Other { key, description } => {
                 if key == "note" || key == "notes" {

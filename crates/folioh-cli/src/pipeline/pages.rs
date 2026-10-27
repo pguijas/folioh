@@ -15,11 +15,14 @@ use folioh_docs::{
 use folioh_ir::ModuleIR;
 use folioh_mdx::{markdown_to_mdx, MarkdownPage};
 use folioh_site::builder::{Manifest, SiteBuilder};
-use folioh_site::fs::{hash_file, sha256_hex};
-use folioh_site::sidebar::{generate_meta_files, SidebarInput, SidebarModule, SidebarPage};
+use folioh_site::fs::sha256_hex;
+use folioh_site::sidebar::{
+    generate_meta_files, read_directory_orders, SidebarInput, SidebarModule, SidebarPage,
+};
 use folioh_site::template::BuildContext;
 use serde_json::{json, Map, Value};
 
+use super::source_hash::source_hash as hash_file;
 use super::{BuildError, Report};
 use crate::ui::text::YELLOW;
 
@@ -48,6 +51,18 @@ pub struct GenerationResult {
     pub sources: Map<String, Value>,
     pub skipped: usize,
     pub total_pages: usize,
+}
+
+impl GenerationResult {
+    /// Routes owned by the source pipeline, including its API overview.
+    pub fn source_routes(&self) -> BTreeSet<String> {
+        self.sources
+            .values()
+            .filter_map(|entry| entry.get("route").and_then(Value::as_str))
+            .map(str::to_owned)
+            .chain(std::iter::once("api-reference/index".to_owned()))
+            .collect()
+    }
 }
 
 /// Modules whose feature gate is open.
@@ -265,11 +280,13 @@ pub fn write_meta_pages(
             unlisted: doc.unlisted,
         })
         .collect();
+    let directory_orders = read_directory_orders(&config.source.docs)?;
     let meta_files = generate_meta_files(&SidebarInput {
         nav: &config.nav,
         modules: &modules,
         pages: &pages,
         default_collapsed: config.sidebar.default_collapsed,
+        directory_orders: &directory_orders,
     });
     let keep: BTreeSet<String> = meta_files.keys().cloned().collect();
     builder.prune_meta_files(&keep)?;

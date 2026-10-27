@@ -115,6 +115,12 @@ jobs:
           node-version: 22
       - name: pnpm
         run: corepack enable && corepack prepare pnpm@10 --activate
+      # Browser tooling stays outside the template shipped to projects.
+      - name: browser regression tools
+        run: |
+          npm install --prefix "$RUNNER_TEMP/folioh-browser" --no-save --ignore-scripts playwright@1.62.1
+          node "$RUNNER_TEMP/folioh-browser/node_modules/playwright/cli.js" install --with-deps chromium
+          echo "FOLIOH_PLAYWRIGHT_MODULE=$RUNNER_TEMP/folioh-browser/node_modules/playwright" >> "$GITHUB_ENV"
       # The two suites that run real pnpm and next build; ignored by default
       # because they cost minutes and the network.
       - name: the example site exports

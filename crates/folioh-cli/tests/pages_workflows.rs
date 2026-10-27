@@ -239,3 +239,200 @@ fn preview_build_paths_follow_pages_configuration_for_custom_and_project_domains
         }
     }
 }
+
+#[test]
+fn preview_cache_prefixes_cannot_restore_production_or_ci_caches() {
+    use serde_yaml_ng::Value;
+    use std::{fs, path::Path};
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut preview = Vec::new();
+    let mut trusted = Vec::new();
+    for file in [
+        "branch-previews.yml",
+        "pages.yml",
+        "rust.yml",
+        "release.yml",
+    ] {
+        let workflow: Value = serde_yaml_ng::from_str(
+            &fs::read_to_string(root.join(".github/workflows").join(file)).unwrap(),
+        )
+        .unwrap();
+        for job in workflow["jobs"].as_mapping().unwrap().values() {
+            let Some(steps) = job["steps"].as_sequence() else {
+                continue;
+            };
+            for step in steps {
+                if step["uses"].as_str() != Some("Swatinem/rust-cache@v2") {
+                    continue;
+                }
+                // rust-cache retains prefix-key in both its exact and fallback keys.
+                let prefix = step["with"]["prefix-key"].as_str().unwrap_or("v0-rust");
+                if file == "branch-previews.yml" {
+                    assert_ne!(
+                        prefix, "v0-rust",
+                        "preview caches require an explicit boundary"
+                    );
+                    preview.push(prefix.to_owned());
+                } else {
+                    trusted.push(prefix.to_owned());
+                }
+            }
+        }
+    }
+    assert_eq!(
+        preview.len(),
+        2,
+        "cover PR builds and trusted preview deploys"
+    );
+    assert!(!trusted.is_empty());
+    for prefix in preview {
+        assert!(!prefix.is_empty() && !prefix.contains("${{"));
+        for other in &trusted {
+            assert!(
+                !prefix.starts_with(other) && !other.starts_with(&prefix),
+                "preview cache prefix {prefix} overlaps trusted prefix {other}"
+            );
+        }
+    }
+}
+
+#[test]
+fn temporary_artifacts_expire_and_cleanup_stays_inside_successful_run_consumers() {
+    use serde_json::json;
+    use serde_yaml_ng::Value;
+    use std::{fs, path::Path, process::Command};
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut cases = Vec::new();
+    let mut uploads = 0;
+    for (file, consumer, verified) in [
+        ("branch-previews.yml", "deploy", "Comment preview URL"),
+        ("pages.yml", "deploy", "Verify and print deployment URL"),
+        ("release.yml", "publish", "GitHub Release"),
+    ] {
+        let workflow: Value = serde_yaml_ng::from_str(
+            &fs::read_to_string(root.join(".github/workflows").join(file)).unwrap(),
+        )
+        .unwrap();
+        assert!(workflow["permissions"]["actions"].is_null());
+        for (name, job) in workflow["jobs"].as_mapping().unwrap() {
+            if name.as_str() != Some(consumer) {
+                assert_ne!(job["permissions"]["actions"].as_str(), Some("write"));
+            }
+            for step in job["steps"].as_sequence().into_iter().flatten() {
+                if step["uses"].as_str().is_some_and(|action| {
+                    action.starts_with("actions/upload-artifact@")
+                        || action.starts_with("actions/upload-pages-artifact@")
+                }) {
+                    assert_eq!(step["with"]["retention-days"].as_u64(), Some(1), "{file}");
+                    uploads += 1;
+                }
+            }
+        }
+        let job = &workflow["jobs"][consumer];
+        assert_eq!(job["permissions"]["actions"].as_str(), Some("write"));
+        let steps = job["steps"].as_sequence().unwrap();
+        let verification = steps.iter().position(|s| s["name"] == verified).unwrap();
+        let cleanup = steps
+            .iter()
+            .position(|s| s["name"] == "Remove consumed temporary artifacts")
+            .unwrap();
+        assert!(
+            cleanup > verification,
+            "{file}: consume and verify before cleanup"
+        );
+        let step = &steps[cleanup];
+        assert_eq!(step["uses"].as_str(), Some("actions/github-script@v7"));
+        assert_eq!(step["continue-on-error"].as_bool(), Some(true));
+        let names = if file == "release.yml" {
+            workflow["jobs"]["build"]["strategy"]["matrix"]["include"]
+                .as_sequence()
+                .unwrap()
+                .iter()
+                .map(|target| format!("folioh-{}", target["target"].as_str().unwrap()))
+                .collect::<Vec<_>>()
+        } else if file == "branch-previews.yml" {
+            vec!["branch-preview-site".into(), "github-pages".into()]
+        } else {
+            vec!["github-pages".into()]
+        };
+        cases.push(json!({
+            "file": file,
+            "condition": step["if"].as_str().unwrap(),
+            "script": step["with"]["script"].as_str().unwrap(),
+            "names": names,
+        }));
+    }
+    assert_eq!(
+        uploads, 4,
+        "include every current repository artifact producer"
+    );
+    let output = Command::new("node")
+        .args([
+            "-e",
+            r#"
+const assert = require('node:assert/strict')
+const { runInNewContext } = require('node:vm')
+const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor
+;(async () => {
+  for (const { file, condition, script, names } of JSON.parse(process.argv[1])) {
+    const preview = file === 'branch-previews.yml'
+    for (const [success, outcome, enabled, expected] of [
+      [true, 'success', 'true', true],
+      [false, 'success', 'true', false], // verification failed after deployment
+      [false, 'failure', 'true', false],
+      [true, 'skipped', 'true', false],
+      [true, 'success', 'false', !preview]
+    ]) {
+      const steps = { deployment: { outcome }, release: { outcome }, 'deploy-gate': { outputs: { enabled } } }
+      const actual = runInNewContext(condition.replaceAll('steps.deploy-gate', "steps['deploy-gate']"), { success: () => success, steps })
+      assert.equal(actual, expected, `${file}: ${success}/${outcome}/${enabled}`)
+    }
+    const context = { repo: { owner: 'example', repo: 'docs' }, runId: 42 }
+    const artifacts = Array.from({length: 105}, (_, id) => ({ id, name: 'unrelated-diagnostics' }))
+    artifacts.unshift({ id: 404, name: names[0] }) // already expired is harmless
+    artifacts.push(...names.map((name, index) => ({ id: 1000 + index, name })))
+    const execute = new AsyncFunction('github', 'context', 'core', script)
+    for (const fail of [false, true]) {
+      let listed = 0
+      const deleted = []
+      const listWorkflowRunArtifacts = () => { throw Error('pagination required') }
+      const github = {
+        paginate: async (endpoint, options) => {
+          assert.equal(endpoint, listWorkflowRunArtifacts)
+          assert.deepEqual(options, { owner: 'example', repo: 'docs', run_id: 42, per_page: 100 })
+          listed++
+          return artifacts
+        },
+        rest: { actions: {
+          listWorkflowRunArtifacts,
+          deleteArtifact: async options => {
+            assert.deepEqual(Object.keys(options).sort(), ['artifact_id', 'owner', 'repo'])
+            assert.equal(options.owner, 'example'); assert.equal(options.repo, 'docs')
+            if (options.artifact_id === 404) throw Object.assign(Error('gone'), { status: 404 })
+            if (fail) throw Object.assign(Error('denied'), { status: 403 })
+            deleted.push(options.artifact_id)
+          }
+        } }
+      }
+      if (fail) await assert.rejects(execute(github, context, { info() {} }), { status: 403 })
+      else {
+        await execute(github, context, { info() {} })
+        assert.deepEqual(deleted, names.map((_, index) => 1000 + index), file)
+      }
+      assert.equal(listed, 1, `${file}: paginate the current run only`)
+    }
+  }
+})().catch(error => { console.error(error); process.exitCode = 1 })
+"#,
+        ])
+        .arg(serde_json::to_string(&cases).unwrap())
+        .output()
+        .expect("Node.js is required to verify workflow cleanup boundaries");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

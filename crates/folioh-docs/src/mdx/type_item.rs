@@ -95,6 +95,15 @@ pub(crate) fn type_signature(item: &TypeIR) -> String {
         .join("\n")
 }
 
+/// An impl names both sides of its contract; other types keep their kind label.
+pub(crate) fn type_title(item: &TypeIR, name: fn(&str) -> String) -> String {
+    if let (TypeKind::Impl, Some(on)) = (item.kind, item.bases.first()) {
+        format!("impl {} for {}", name(on), name(&item.name))
+    } else {
+        format!("{} {}", item.kind.label(), name(&item.name))
+    }
+}
+
 pub(super) fn render_type(item: &TypeIR, level: usize, page: &Page) -> String {
     let source = if item.source_file.is_empty() {
         String::new()
@@ -103,10 +112,9 @@ pub(super) fn render_type(item: &TypeIR, level: usize, page: &Page) -> String {
     };
     let id = type_anchor(item);
     let mut parts = vec![format!(
-        "{} {} `{}`{source} [#{id}]\n",
+        "{} {}{source} [#{id}]\n",
         "#".repeat(level),
-        item.kind.label(),
-        item.name
+        type_title(item, |name| format!("`{name}`"))
     )];
     if !item.signature.is_empty() {
         parts.push(page.fence(&type_signature(item)));

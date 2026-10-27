@@ -10,6 +10,7 @@ pub mod builder;
 pub mod export;
 pub mod extensions;
 pub mod fs;
+mod generated;
 pub mod inject;
 pub mod json;
 pub mod links;

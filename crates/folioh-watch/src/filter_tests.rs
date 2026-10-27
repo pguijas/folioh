@@ -33,6 +33,7 @@ fn project() -> (tempfile::TempDir, WatchConfig) {
                 roots: vec![p.join("crate/src")],
             },
         ],
+        source_files: Vec::new(),
         doc_roots: vec![p.join("docs")],
         plugin_roots: vec![p.join("gallery")],
         preview_examples: Some(p.join("docs/examples")),
