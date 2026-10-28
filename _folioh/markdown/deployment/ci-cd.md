@@ -215,10 +215,29 @@ receive write permissions.
 
 Folioh's repository workflows use its trusted NAS worker for Pages and previews,
 with fresh job directories and Rust caching that preserves installed tools.
+Both preview jobs use explicit cache prefixes distinct from main and release
+jobs, including fallback restores. This isolates cached archives, not the worker
+account.
 A persistent worker shares its user account across jobs; separate directories do
 not isolate hostile code. Use a disposable worker for untrusted contributors.
 The Pages helpers replace their own state worktree registration on refresh, so
 repeated deployments also work when its files were removed between jobs.
+
+### Temporary artifact retention
+
+Folioh's repository workflows retain temporary preview sites, Pages bundles and
+release archives for at most one day. After a deployment is verified or a release
+is published, its trusted consumer removes only the named intermediates from the
+same workflow run. Published Pages content and GitHub Release downloads remain
+available. Failed consumers keep the one-day window for diagnosis; a cleanup
+failure leaves that expiration in place and is visible as a tolerated step failure.
+
+When adapting a workflow, set `retention-days: 1` explicitly on its artifact
+uploads. Give artifact deletion permission only to the trusted consumer, keep
+cleanup after the final verification, and scope it to the current run and exact
+artifact names. Generated project workflows keep their own retention settings.
+GitHub accounts for storage over time; deleting files reduces future consumption
+but does not refund usage already accumulated in the current billing period.
 
 ## Pull Request Checks
 

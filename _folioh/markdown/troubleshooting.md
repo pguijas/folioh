@@ -73,6 +73,18 @@ folioh build --clean
 folioh serve --clean
 ```
 
+## `Workspace ... is already in use`
+
+Another Folioh build or serve owns this project's generated workspace. The
+message names its PID, command and serve port. Stop that process, or work in a
+different checkout. Choosing a different port, `--clean` or `--kill-existing`
+does not allow two commands to rewrite the same workspace.
+
+The claim uses an operating-system file lock and is released when its holder
+exits. The next command reports and recovers a leftover owner record. Do not
+delete `.build.lock` or `.build.owner.json` while a process is using the
+workspace. Both files are local state and should be ignored by Git.
+
 ## `Port 4321 is already in use`
 
 The message names the port and the way out. Pick another one, or stop the
@@ -86,12 +98,20 @@ folioh serve --kill-existing
 ## Broken internal links
 
 The build reports them as warnings on the Links step, one line per link:
-`<page>:<line> → <target>`. The page is the one holding the link, the target
-is the link as it appears in the generated page (a relative link shows as its
-resolved `/docs/` route), and the line counts in the generated
-`.build/content/<page>.mdx`, not in the source file. They do not stop the
-build. Relative links between guide pages (`./configuration`) survive the
-static export; absolute paths into the site root do not always.
+`<page>:<line> → <target>`. They do not stop the build.
+
+After the static export, `folioh build` also checks fragments such as
+`./configuration#theme` and `#installation` against the actual HTML IDs.
+This includes rendered headings, API symbols and explicit component anchors.
+Fragment warnings name the original Markdown filename and line when available;
+generated pages name their `.mdx` file. Renaming a heading is checked again on
+the next warm build. Code fences, inline code and frontmatter are excluded from
+fragment checks. External links and fragments in non-HTML assets are skipped.
+
+Route warnings use the generated page route and line in
+`.build/content/<page>.mdx`; relative links show their resolved `/docs/` target.
+`folioh serve` checks routes while watching; fragment validation requires a
+static export with `folioh build`.
 
 ## The static export fails at the end of a build
 

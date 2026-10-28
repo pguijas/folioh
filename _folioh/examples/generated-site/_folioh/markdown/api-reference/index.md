@@ -1,2 +1,2 @@
-- **example_package**: Module documentation.
-- **example_package.arithmetic**: Module documentation.
+- **example_package**
+- **example_package.arithmetic**

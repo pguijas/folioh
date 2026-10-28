@@ -28,6 +28,17 @@ page shows:
   tables, and JavaScript and Rust re-exports listed as written, without
   resolving what they point at.
 
+Rust trait implementations are titled `impl Trait for Type`. Modules without a
+doc comment have no summary in the overview. Dunder identifiers such as
+`__init__` render literally in API prose; fenced and inline code keep their
+original content. Use `**text**` for strong emphasis.
+
+Block reStructuredText directives in docstrings render as callouts: `note`,
+`warning`, `tip`, `seealso` and `deprecated`. Deprecation versions and body
+content are preserved. Other directive names become labelled notices. Nested
+notices, lists and code remain readable, and the Markdown/full-text reference
+retains each notice label and body.
+
 [Languages](./languages) lists what each reader takes from its source and
 where it stops.
 
@@ -200,7 +211,7 @@ folioh init [OPTIONS] [DIRECTORY]
 
 **Interactive wizard:**
 
-When run without `--yes`, `folioh init` shows what it detected, pre-filled from the project scan, and asks two questions: the docstring style and the visual preset.
+When run without `--yes`, `folioh init` shows what it detected, pre-filled from the project scan, and asks for the visual preset. When Python sources are detected, it first asks for the docstring style; Rust-only, JavaScript-only and docs-only projects skip that question.
 
 In a terminal each question is an inline menu. The arrow keys or `j`/`k` move, Return submits, a digit submits that option, and Esc, `q` or `Ctrl+C` abort. The open menu reads `? Docstring style › - Use arrow-keys. Return to submit.` above its options; once submitted, it is replaced by one line with the chosen value. While a menu is open, the tips line under the banner (`· tip ·`) shows the next Folioh tip every second. When stdin or stdout is not a terminal, or `CI` is set, the questions become numbered lists that read one line each; an empty line keeps the default.
 
@@ -280,6 +291,7 @@ folioh init /path/to/my-project -y
 |------|---------|
 | `0` | Success, or `docs.yaml` already exists (skipped). |
 | `1` | The directory does not exist, or the wizard was aborted. Nothing is written. Esc, `q` or `Ctrl+C` print `^C Init aborted. No files changed.`; stdin closing before an answer prints `Init aborted: stdin ended before an answer. No files changed; rerun with --yes to take the defaults.` |
+| `130` / `143` | Unix SIGINT / SIGTERM while awaiting an init answer. The prompt aborts without writing files and restores terminal mode, including numbered prompts and unfinished piped answers. |
 | `2` | Usage error, such as an unknown flag. |
 
 ### `folioh build`
@@ -339,6 +351,12 @@ folioh build --open
 
 `folioh build --open` is intentionally blocking after the build: it starts a static preview server and waits until you press `Ctrl+C`, which ends the process with the interrupt status (`130` in most shells).
 
+Only one build or development server can own a project's `.build/` workspace at a
+time. A competing command fails before changing it and names the holder's PID,
+command and serve port. `folioh clean` respects the same ownership. Stop that
+process or use a different checkout. A claim
+left by an interrupted process is recovered automatically with a message.
+
 **Exit codes:**
 
 | Code | Meaning |
@@ -376,7 +394,12 @@ folioh serve [OPTIONS] [DIRECTORY]
 2. Prints `Starting dev server...` and starts a Next.js development server on the specified port.
 3. **File watching:** after the dev server starts, Folioh prints `Watching for file changes...` and watches the configured source paths of every language and the documentation directories for changes. Edits are automatically detected, the affected pages and local images are regenerated, and the browser updates via hot reload.
 4. **Incremental builds:** subsequent `serve` runs reuse cached dependencies (`.build/node_modules/`) and skip `pnpm install` when deps haven't changed.
-5. Keeps the server running until interrupted with `Ctrl+C`. In a terminal, `Ctrl+C` reaches both Folioh and the Next.js dev server, so both stop. Folioh installs no signal handler in this release: a `kill` sent to the `folioh` process alone ends Folioh but leaves the dev server running on the port, and the next `folioh serve --kill-existing` stops it.
+5. Keeps the server running until interrupted. On Unix, `Ctrl+C`/SIGINT and SIGTERM stop the owned development-server process tree and print `Server stopped.`. A plain `kill <folioh-pid>` stops the server too. Terminal hangup and quit signals also clean up that tree.
+
+The development server keeps ownership of `.build/` while watching. Starting a
+second serve on another port, or running `build --clean`, refuses to change that
+workspace. `--kill-existing` handles port occupants; it does not bypass workspace
+ownership. Stop the owning Folioh process before restarting it.
 
 The `--clean` flag forces a full rebuild from scratch, clearing all caches.
 
@@ -434,7 +457,7 @@ folioh serve ../my-lib -v -o
 | `1` | Failed to start: a missing config file, a port already in use, or a build error; or the dev server exited on its own with a failure. |
 | `2` | Usage error, such as an unknown flag. |
 
-Stopping the server with `Ctrl+C` ends the process with the interrupt status (`130` in most shells), and a `kill` with `143`; there is no `0` exit for an interrupted server.
+On Unix, stopping the development-server session with SIGINT (`Ctrl+C`) returns `130`; SIGTERM (`kill <folioh-pid>`) returns `143`. Folioh stops its server group, reaps the launcher and releases the workspace before returning.
 
 **Batch tracing:** Set [`FOLIOH_TRACE`](#folioh_trace) to record a JSONL
 event stream for watch batches. See the environment variables section for
@@ -1341,6 +1364,11 @@ For tutorial examples, place a complete Folioh project under `docs/examples/<nam
 />
 ```
 
+Nested examples use the parent site’s public origin and their own deployment path
+for social images and canonical metadata. If the parent has no public URL,
+nested examples omit generated social images. Changing the parent URL refreshes
+the example exports on the next build.
+
 ---
 
 # ExampleTabs
@@ -2243,6 +2271,11 @@ Navigation, swatches, manual adjustments and mode changes apply to the page and 
 
 The front preview keeps its manual adjustments; each neighbouring preview shows the exact recipe it will select. Changing to another variant starts from its configured style. Selecting a swatch also clears manual adjustments. The site's preset uses `theme.tune` and `theme.radius`. A saved recipe removed from the catalog remains reachable and editable until another variant replaces its family's draft, without adding a swatch. Stored preset IDs remain compatible with earlier versions.
 
+The stored theme is applied before hydration by one content-versioned script
+shared across pages. Its URL changes when the preset data or bootstrap behavior
+changes, so it can be cached across visits. The page keeps the default theme CSS
+as a fallback; the preset tables are not repeated in each HTML file.
+
 ### Customize
 
 The final circle in the variant row, or the `c` key outside a text field, opens Customize inside the same centered popup. Its size, backdrop and position stay the same. Its controls update both the preview and the page immediately. Back or Escape returns to the variants; every change is already saved.
@@ -2944,6 +2977,8 @@ deploy:
 
 Not available in this release; ignored with a warning. A project can keep
 either key in `docs.yaml`: the build warns and carries on without it.
+These configuration gates do not reserve documentation routes: authored pages
+named `i18n.md` or `versioning.md` publish normally.
 
 ### output
 
@@ -2977,13 +3012,16 @@ A file that does not exist fails the build with `public file not found: <absolut
 
 Controls the visual appearance of the generated documentation site.
 
+Generated Pastel social images use the project-name monogram on root and docs
+cards, independently of desktop fonts installed on the build host.
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `preset` | `string` | `"pastel"` | Default visual preset for the generated site (Folioh Pastel with Ink). `folioh init` offers `organic-editorial`, `beacon`, `atlas`, `workshop`, and `pastel`; it may also be any built-in id, one a theme package or overlay declares, or a new id that `theme.name`, `theme.tokens` or `theme.style` defines. Anything else stops the build and names the nearest id. |
 | `extra_presets` | `bool` | `false` | Enable the full bundled theme catalog. By default the picker offers Pastel, the configured site preset and project presets; saved disabled themes fall back to the site default. |
 | `dark_mode` | `bool` | `true` | Enable dark mode: the theme picker's Light, Dark and System radios, the toggles `theme.header.theme_toggle` adds, and the `d` key that switches between light and dark themes; `false` keeps the site light, with no mode controls, toggles or `d` shortcut, and `theme.header.theme_toggle` then warns; a dark-only palette the reader applies, such as a dark Omarchy one, still turns the page dark. Must be a YAML boolean; an explicit `null` is an error. |
-| `logo` | `string` | `""` | Path to a logo image shown beside the project name in the docs navbar and the landing navbar, under `deploy.base_path`. Resolved relative to the project directory; a missing file stops the build. |
-| `favicon` | `string` | `""` | Path to a favicon file. Resolved relative to the project directory. |
+| `logo` | `string` | `""` | Path to a logo image shown beside the project name in the docs, landing and previews navbars, under `deploy.base_path`. Resolved relative to the project directory; a missing file stops the build. |
+| `favicon` | `string` | `""` | Path to a favicon file. Resolved relative to the project directory; a missing file stops the build and reports the requested path. |
 | `name` | `string` | `""` | Optional project preset display name. When set with project theme data, Folioh adds a Project group to the theme picker. |
 | `description` | `string` | `""` | Optional project preset description. |
 | `preview` | `mapping` | `{}` | Optional `light` and `dark` swatch colors for the project preset preview. |
@@ -3037,6 +3075,9 @@ static export pipeline. See [Custom Templates](./theming/custom-templates) for
 the full contract and required file structure.
 
 ### search
+
+The 404 page offers the same search when its index is available. Setting
+`search.enabled: false` also hides this control; missing pages remain noindex.
 
 Controls the built-in full-text search powered by [Pagefind](https://pagefind.app). Search is enabled by default, appears in the docs navbar, and opens with `Cmd+K` on macOS or `Ctrl+K` on Windows/Linux.
 
@@ -3132,6 +3173,35 @@ export default {
 This applies to generated guide folders and API reference folder groups. It does not
 change the route for folder index pages, and it does not collapse individual leaf
 pages.
+
+#### Directory page order
+
+Put `_meta.yaml` beside a directory’s pages to order its immediate children:
+
+```yaml filename="docs/advanced/_meta.yaml"
+order:
+  - index
+  - quickstart
+  - configuration
+  - examples
+```
+
+Use child route names without `.md`, such as `quickstart` or the folder name
+`examples`. `README` refers to `index`. A nested folder owns its own order and
+does not need an index page. Names listed here come first; other children keep
+their deterministic discovery order. Missing future pages are skipped.
+
+Titles still come from frontmatter or the first H1. Unlisted pages and nested
+index pages stay hidden. Metadata can also order plugin pages and
+generated API folders by placing the file at the corresponding route directory
+under a `source.docs` root, for example `docs/api-reference/mylib/_meta.yaml`.
+The root directory’s order applies before `docs.yaml` `nav`.
+
+`build` rereads these files on warm builds. `serve` applies edits, additions and
+removals without restarting. Invalid metadata reports its source filename;
+unknown keys, non-string or duplicate entries, paths and Markdown file extensions are
+errors. Two documentation roots declaring the same route directory’s order are
+also an error.
 
 ### llm
 
@@ -3331,6 +3401,11 @@ nav:
   - "Guide"
   - "FAQ"
 ```
+
+The component catalog and default landing links follow `template.docs_route_base`.
+The default API entry appears when a generated reference index is published;
+explicitly configured landing routes keep their destinations. Relative guide
+links are checked against the same file-relative paths used in rendered pages.
 
 ---
 
@@ -3552,10 +3627,29 @@ receive write permissions.
 
 Folioh's repository workflows use its trusted NAS worker for Pages and previews,
 with fresh job directories and Rust caching that preserves installed tools.
+Both preview jobs use explicit cache prefixes distinct from main and release
+jobs, including fallback restores. This isolates cached archives, not the worker
+account.
 A persistent worker shares its user account across jobs; separate directories do
 not isolate hostile code. Use a disposable worker for untrusted contributors.
 The Pages helpers replace their own state worktree registration on refresh, so
 repeated deployments also work when its files were removed between jobs.
+
+### Temporary artifact retention
+
+Folioh's repository workflows retain temporary preview sites, Pages bundles and
+release archives for at most one day. After a deployment is verified or a release
+is published, its trusted consumer removes only the named intermediates from the
+same workflow run. Published Pages content and GitHub Release downloads remain
+available. Failed consumers keep the one-day window for diagnosis; a cleanup
+failure leaves that expiration in place and is visible as a tolerated step failure.
+
+When adapting a workflow, set `retention-days: 1` explicitly on its artifact
+uploads. Give artifact deletion permission only to the trusted consumer, keep
+cleanup after the final verification, and scope it to the current run and exact
+artifact names. Generated project workflows keep their own retention settings.
+GitHub accounts for storage over time; deleting files reduces future consumption
+but does not refund usage already accumulated in the current billing period.
 
 ## Pull Request Checks
 
@@ -3774,6 +3868,15 @@ flowchart LR
     Site --> Pages["GitHub Pages"]
     Site --> Pipeline["CI/CD publish job"]
 ```
+
+## Navigation
+
+HTTP links use directory URLs such as `/docs/installation/`, including after
+client navigation. The exported HTML retains explicit `index.html` targets for
+links opened directly from the filesystem. Configure the host to serve each
+directory's index file and use the exported `404.html` for missing pages.
+Client-loaded stylesheets and JavaScript chunks keep the deployment base when
+navigation changes the URL depth, including recovery from a missing page.
 
 ## Base Paths
 
@@ -4216,6 +4319,28 @@ def load(path: str) -> dict:
         A dictionary containing the parsed configuration.
     """
 ```
+
+### Yields
+
+Describe each item a generator yields under `Yields:`:
+
+```python
+from collections.abc import Iterator
+
+def count(limit: int) -> Iterator[int]:
+    """Count up to a limit.
+
+    Yields:
+        int: Each value below the limit.
+    """
+    yield from range(limit)
+```
+
+The signature keeps `Iterator[int]`; the **Yields** line describes `int`.
+NumPy `Yields` sections and reST `:yields int:` fields carry the same meaning.
+When the yielded type is omitted, Folioh shows its description without using
+the function's iterator annotation as the item type.
+Markdown exports and `llms-full.txt` use the same distinction.
 
 ### Raises
 
@@ -4669,8 +4794,10 @@ export function connect(host, options = {}) {}
 The description comes first, then one parameter row per `@param`: `[name]`
 is read as the parameter's name (the row does not mark it optional),
 `[name=default]` gives its default, and `options.port` becomes a row of its own
-after `options`. `@returns` (or `@return`) and `@throws` fill the return and
-raise lines, `@deprecated` renders as a **Deprecated:** paragraph, and each
+after `options`. `@returns` (or `@return`), `@yields` (or `@yield`) and `@throws`
+fill the return, yielded-item and raise lines. For example,
+`@yields {number} Each value.` renders as **Yields** with item type `number`.
+`@deprecated` renders as a **Deprecated:** paragraph, and each
 `@example` becomes a code block.
 `{@link Target}` reads as `Target` in code, `{@link Target text}` or
 `{@link Target|text}` as its text, and a URL target as a link. A parameter
@@ -4691,8 +4818,10 @@ comments for the module, and reads their Markdown as rustdoc does:
   heading.
 
 A Rust function shows its signature as written, with no linked types, and its
-doc comment; there is no parameter table. `#[doc = include_str!("...")]` is not
-read in this release.
+doc comment; there is no parameter table. Literal `#[doc = include_str!("...")]`
+files and `cfg_attr` doc values are also read. See [Rust documentation
+attributes](./languages#rust-documentation-attributes) for path resolution,
+missing-file warnings and incremental builds.
 
 ---
 
@@ -4987,8 +5116,8 @@ interpreter, compiler, or build toolchain.
 | Language | Declarations | Documentation |
 | --- | --- | --- |
 | Python | Modules, functions and async functions, classes and nested classes, methods, properties, class attributes (enum members included), module constants, signatures, annotations, and decorators | Google-style and NumPy-style docstrings, detected per docstring; detection also reads reStructuredText `:param:` fields and epydoc `@param` fields, and Sphinx roles such as `` :class:`Foo` `` read as code |
-| JavaScript | `.js`, `.mjs`, and `.cjs`; named and default ESM exports, including local declarations exported by `export { name }`; CommonJS `module.exports` (a function, a class, or an object of names) and `exports.*`; functions and generators, arrow functions bound to an exported name, classes with constructors, static methods, getters and setters, class fields, and constants | JSDoc descriptions, `@param` (with `[name=default]`, and `options.name` properties as rows of their own), `@returns`, `@throws`, `@deprecated`, `@example`, and `{@link}` read as its text |
-| Rust | Public functions, structs and fields, enums and variants, traits and associated items, inherent and trait implementations, type aliases, constants, and statics | `///`, `//!`, and `#[doc = "..."]` comments read as rustdoc reads them: untagged code blocks are Rust, `# ` hidden lines are dropped, and intra-doc links keep their text; signatures and attributes as written |
+| JavaScript | `.js`, `.mjs`, and `.cjs`; named and default ESM exports, including local declarations exported by `export { name }`; CommonJS `module.exports` (a function, a class, or an object of names) and `exports.*`; functions and generators, arrow functions bound to an exported name, classes with constructors, static methods, getters and setters, class fields, and constants | JSDoc descriptions, `@param` (with `[name=default]`, and `options.name` properties as rows of their own), `@returns`, `@yields` (or `@yield`), `@throws`, `@deprecated`, `@example`, and `{@link}` read as its text |
+| Rust | Public functions, structs and fields, enums and variants, traits and associated items, inherent and trait implementations, type aliases, constants, and statics | `///`, `//!`, `#[doc = "..."]`, literal `include_str!` files, and `cfg_attr` doc values: untagged code blocks are Rust, `# ` hidden lines are dropped, and intra-doc links keep their text; signatures and attributes as written |
 
 See [Writing Doc Comments](./docstrings) for Python examples, method kinds,
 annotations, and control over what gets documented, and for what the JSDoc
@@ -5033,6 +5162,25 @@ the binary: configuring a language is all it takes to read it. See
 | JavaScript | File paths relative to the source root, with `/` as `.`; `utils/index.js` becomes `utils`. When two files publish one name (`utils/index.js` and `utils.js`, or `index.mjs` and `index.cjs`), the first in path order is read and the other is named in a warning | `api-reference/javascript/utils` |
 | Rust | Crate names from `Cargo.toml`, with hyphens converted to underscores; `mod` declarations followed from `lib.rs` or `main.rs` | `api-reference/rust/demo_crate/models` |
 
+## Rust documentation attributes
+
+```rust
+#![doc = include_str!("../README.md")]
+
+#[cfg_attr(feature = "extra-docs", doc = "Additional documentation.")]
+pub fn example() {}
+```
+
+Literal `include_str!` paths resolve relative to the Rust source file. Missing
+or unreadable UTF-8 files produce a warning naming the input and its source;
+the remaining API still builds. Conditional doc attributes contribute without
+evaluating features or configuration predicates, including nested `cfg_attr`.
+Folioh does not execute macros to compute paths.
+
+Editing, deleting, or recreating an included file invalidates its API page on
+warm builds and in `serve`. Restart `serve` after changing include paths so its
+file subscriptions include the new inputs.
+
 ## Limits
 
 Source is inspected statically. Folioh does not execute imports, evaluate
@@ -5040,9 +5188,11 @@ application code, or infer runtime behavior.
 
 | Language | Limits |
 | --- | --- |
-| Python | Documentation comes from source declarations, annotations, and docstrings; the package does not need to be installed or importable. A module's `__all__` decides what it publishes; without one, a name with a leading underscore is skipped. A dunder method other than `__init__` appears only when it has a docstring, `@overload` stubs give way to the implementation, and a property's setter and deleter fold into its getter. reStructuredText directives such as `.. note::` are shown as written. |
+| Python | Documentation comes from source declarations, annotations, and docstrings; the package does not need to be installed or importable. A module's `__all__` decides what it publishes; without one, a name with a leading underscore is skipped. A dunder method other than `__init__` appears only when it has a docstring, `@overload` stubs give way to the implementation, and a property's setter and deleter fold into its getter. Block reStructuredText notices render as callouts; fenced and indented code stays literal. |
 | JavaScript | Only what a file exports is documented, and a `#private` class member is not. `node_modules`, `dist`, `build`, and dot directories are never read, `.jsx` is skipped with a warning, and TypeScript is reported in a warning rather than read. A setter beside its getter is shown once, as the getter. Types and defaults come from the source and from JSDoc, never from inference; re-exports are listed by name without resolving the module they come from. |
-| Rust | Only plain `pub` items are documented: `pub(crate)`, `pub(super)`, `#[doc(hidden)]`, and impls of private types are skipped, and so are macro definitions and invocations. A module is read only if some `lib.rs`, `main.rs`, or parent module declares it `pub`. `pub use` is listed as written under Re-exports without resolving its target, so an item re-exported from a private module is not documented. `cfg` attributes are displayed without evaluation, and `#[doc = include_str!(...)]` is not read. Inline-module items appear on the page of the file that declares them. |
+| Rust | Only plain `pub` items are documented: `pub(crate)`, `pub(super)`, `#[doc(hidden)]`, and impls of private types are skipped, and so are macro definitions and invocations. A module is read only if some `lib.rs`, `main.rs`, or parent module declares it `pub`. `pub use` is listed as written under Re-exports without resolving its target, so an item re-exported from a private module is not documented. `cfg` and `cfg_attr` predicates are not evaluated. Conditional doc values contribute as written; other macros, including computed include paths, are not expanded. Inline-module items appear on the page of the file that declares them. |
+
+## Generated examples
 
 ---
 
@@ -5106,12 +5256,13 @@ Folioh warns about `.rst` files only when those files are still present inside a
 directory listed in `source.docs`. It does not emit a warning if the `.rst` files were
 already removed before running `folioh build` or `folioh serve`.
 
-Name guide files and directories with hyphens, not underscores: write
-`common-errors/index.md`, published at `/docs/common-errors/`. In this release a
-guide page whose path contains an underscore, such as `common_errors/index.md`,
-renders a not-found page at both `/docs/common_errors/` and `/docs/common-errors/`.
-Old Sphinx URLs are not redirected. API reference routes are the exception: Python
-package and module names keep their underscores.
+Guide files and directories may contain underscores: `common_errors.md`
+publishes at `/docs/common-errors/`, with `/docs/common_errors/` serving the same
+content. The original mixed spelling used by source links also works. Avoid two guides
+whose routes differ only by underscores and hyphens: they share a canonical URL,
+so the build reports a conflict. Old Sphinx `.html` URLs are not redirected.
+API reference routes keep Python package and module names unchanged, including
+their underscores.
 
 ### 4. Leave your docstrings alone
 
@@ -5623,7 +5774,9 @@ URL: https://folioh.site/docs/plugins/catalog/
 Every integration below is **built in**: compiled into `folioh`, present in
 every build, and inert until its section appears in `docs.yaml`. Add the
 section and the integration builds its pages. Remove it and the integration
-goes inert again. A clean build clears any route it had already written.
+goes inert again. The next build removes its generated pages and standalone
+routes, including on a warm workspace. Project-authored pages at the same route
+remain available.
 
 ## Built-in integrations
 
@@ -6130,6 +6283,8 @@ An optional `projects:` block names them. A `label` titles the card and a
 `description` sits under it; without either, the project key is shown as
 written.
 
+The `docs` key uses a page mark; other project keys use a neutral dot.
+
 The plugin also writes the `projects:` block to `lib/roadmap-projects.ts` as
 `roadmapProjects`, keyed by project, whether or not `routes.public` is on. A
 page that draws a project card outside the `/roadmap/` view (a landing, or a
@@ -6611,8 +6766,11 @@ table to map the symptom to its cause and fix.
 Optional markers (paired feature blocks, the `mdx-components.tsx` markers, and
 markers that only live in optional files such as the landing page or
 `components/theme-configurator.tsx`) do **not** fail the build. When one is
-absent Folioh skips that injection without a message, with one exception: `theme.dark_mode: false` warns
-when `components/theme-provider.tsx` lacks its marker. If a template change did
+absent Folioh skips that injection. Ordinary builds omit skipped-target details,
+with one exception: `theme.dark_mode: false` warns when
+`components/theme-provider.tsx` lacks its marker. `folioh build --verbose` lists
+recorded skipped targets and their reasons, including absent optional files and
+files owned by a theme package. If a template change did
 not take effect and the build still succeeded, compare the file in `.build/`
 with the bundled template: a marker that is still there verbatim, or missing
 from both, was never injected.
@@ -7400,7 +7558,8 @@ Common override points:
 |------|---------|
 | `app/layout.tsx` | Own font loading, metadata shell, providers, and global layout behavior. |
 | `app/docs/layout.tsx` | Own the docs navbar, sidebar placement, search slot, and ThemeGallery mount. |
-| `components/theme-configurator.tsx` | Replace the bundled theme model, its defaults and its bootstrap with a project-specific implementation. |
+| `components/theme-configurator.tsx` | Own the client theme entry point; existing full replacements retain their bootstrap. |
+| `theme/theme-config.ts` | Own the shared theme model, defaults and bootstrap asset data. This module is used on the server and client; keep browser effects inside functions. |
 | `components/project-header-actions.tsx` | Replace the default generated header action component. |
 | `theme/project-theme.ts` | Own all presets, controls, variants, defaults, and resolved tokens in TypeScript. |
 | `app/globals.css` | Override or replace template-level CSS when a project needs exact visual parity. |
@@ -7620,6 +7779,18 @@ folioh build --clean
 folioh serve --clean
 ```
 
+## `Workspace ... is already in use`
+
+Another Folioh build or serve owns this project's generated workspace. The
+message names its PID, command and serve port. Stop that process, or work in a
+different checkout. Choosing a different port, `--clean` or `--kill-existing`
+does not allow two commands to rewrite the same workspace.
+
+The claim uses an operating-system file lock and is released when its holder
+exits. The next command reports and recovers a leftover owner record. Do not
+delete `.build.lock` or `.build.owner.json` while a process is using the
+workspace. Both files are local state and should be ignored by Git.
+
 ## `Port 4321 is already in use`
 
 The message names the port and the way out. Pick another one, or stop the
@@ -7633,12 +7804,20 @@ folioh serve --kill-existing
 ## Broken internal links
 
 The build reports them as warnings on the Links step, one line per link:
-`<page>:<line> → <target>`. The page is the one holding the link, the target
-is the link as it appears in the generated page (a relative link shows as its
-resolved `/docs/` route), and the line counts in the generated
-`.build/content/<page>.mdx`, not in the source file. They do not stop the
-build. Relative links between guide pages (`./configuration`) survive the
-static export; absolute paths into the site root do not always.
+`<page>:<line> → <target>`. They do not stop the build.
+
+After the static export, `folioh build` also checks fragments such as
+`./configuration#theme` and `#installation` against the actual HTML IDs.
+This includes rendered headings, API symbols and explicit component anchors.
+Fragment warnings name the original Markdown filename and line when available;
+generated pages name their `.mdx` file. Renaming a heading is checked again on
+the next warm build. Code fences, inline code and frontmatter are excluded from
+fragment checks. External links and fragments in non-HTML assets are skipped.
+
+Route warnings use the generated page route and line in
+`.build/content/<page>.mdx`; relative links show their resolved `/docs/` target.
+`folioh serve` checks routes while watching; fragment validation requires a
+static export with `folioh build`.
 
 ## The static export fails at the end of a build
 

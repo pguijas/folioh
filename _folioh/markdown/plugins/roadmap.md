@@ -69,6 +69,8 @@ An optional `projects:` block names them. A `label` titles the card and a
 `description` sits under it; without either, the project key is shown as
 written.
 
+The `docs` key uses a page mark; other project keys use a neutral dot.
+
 The plugin also writes the `projects:` block to `lib/roadmap-projects.ts` as
 `roadmapProjects`, keyed by project, whether or not `routes.public` is on. A
 page that draws a project card outside the `/roadmap/` view (a landing, or a

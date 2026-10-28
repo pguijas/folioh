@@ -21,3 +21,8 @@ For tutorial examples, place a complete Folioh project under `docs/examples/<nam
   height={360}
 />
 ```
+
+Nested examples use the parent site’s public origin and their own deployment path
+for social images and canonical metadata. If the parent has no public URL,
+nested examples omit generated social images. Changing the parent URL refreshes
+the example exports on the next build.

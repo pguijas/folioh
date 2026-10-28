@@ -57,7 +57,7 @@ folioh init [OPTIONS] [DIRECTORY]
 
 **Interactive wizard:**
 
-When run without `--yes`, `folioh init` shows what it detected, pre-filled from the project scan, and asks two questions: the docstring style and the visual preset.
+When run without `--yes`, `folioh init` shows what it detected, pre-filled from the project scan, and asks for the visual preset. When Python sources are detected, it first asks for the docstring style; Rust-only, JavaScript-only and docs-only projects skip that question.
 
 In a terminal each question is an inline menu. The arrow keys or `j`/`k` move, Return submits, a digit submits that option, and Esc, `q` or `Ctrl+C` abort. The open menu reads `? Docstring style › - Use arrow-keys. Return to submit.` above its options; once submitted, it is replaced by one line with the chosen value. While a menu is open, the tips line under the banner (`· tip ·`) shows the next Folioh tip every second. When stdin or stdout is not a terminal, or `CI` is set, the questions become numbered lists that read one line each; an empty line keeps the default.
 
@@ -137,6 +137,7 @@ folioh init /path/to/my-project -y
 |------|---------|
 | `0` | Success, or `docs.yaml` already exists (skipped). |
 | `1` | The directory does not exist, or the wizard was aborted. Nothing is written. Esc, `q` or `Ctrl+C` print `^C Init aborted. No files changed.`; stdin closing before an answer prints `Init aborted: stdin ended before an answer. No files changed; rerun with --yes to take the defaults.` |
+| `130` / `143` | Unix SIGINT / SIGTERM while awaiting an init answer. The prompt aborts without writing files and restores terminal mode, including numbered prompts and unfinished piped answers. |
 | `2` | Usage error, such as an unknown flag. |
 
 ### `folioh build`
@@ -196,6 +197,12 @@ folioh build --open
 
 `folioh build --open` is intentionally blocking after the build: it starts a static preview server and waits until you press `Ctrl+C`, which ends the process with the interrupt status (`130` in most shells).
 
+Only one build or development server can own a project's `.build/` workspace at a
+time. A competing command fails before changing it and names the holder's PID,
+command and serve port. `folioh clean` respects the same ownership. Stop that
+process or use a different checkout. A claim
+left by an interrupted process is recovered automatically with a message.
+
 **Exit codes:**
 
 | Code | Meaning |
@@ -233,7 +240,12 @@ folioh serve [OPTIONS] [DIRECTORY]
 2. Prints `Starting dev server...` and starts a Next.js development server on the specified port.
 3. **File watching:** after the dev server starts, Folioh prints `Watching for file changes...` and watches the configured source paths of every language and the documentation directories for changes. Edits are automatically detected, the affected pages and local images are regenerated, and the browser updates via hot reload.
 4. **Incremental builds:** subsequent `serve` runs reuse cached dependencies (`.build/node_modules/`) and skip `pnpm install` when deps haven't changed.
-5. Keeps the server running until interrupted with `Ctrl+C`. In a terminal, `Ctrl+C` reaches both Folioh and the Next.js dev server, so both stop. Folioh installs no signal handler in this release: a `kill` sent to the `folioh` process alone ends Folioh but leaves the dev server running on the port, and the next `folioh serve --kill-existing` stops it.
+5. Keeps the server running until interrupted. On Unix, `Ctrl+C`/SIGINT and SIGTERM stop the owned development-server process tree and print `Server stopped.`. A plain `kill <folioh-pid>` stops the server too. Terminal hangup and quit signals also clean up that tree.
+
+The development server keeps ownership of `.build/` while watching. Starting a
+second serve on another port, or running `build --clean`, refuses to change that
+workspace. `--kill-existing` handles port occupants; it does not bypass workspace
+ownership. Stop the owning Folioh process before restarting it.
 
 The `--clean` flag forces a full rebuild from scratch, clearing all caches.
 
@@ -291,7 +303,7 @@ folioh serve ../my-lib -v -o
 | `1` | Failed to start: a missing config file, a port already in use, or a build error; or the dev server exited on its own with a failure. |
 | `2` | Usage error, such as an unknown flag. |
 
-Stopping the server with `Ctrl+C` ends the process with the interrupt status (`130` in most shells), and a `kill` with `143`; there is no `0` exit for an interrupted server.
+On Unix, stopping the development-server session with SIGINT (`Ctrl+C`) returns `130`; SIGTERM (`kill <folioh-pid>`) returns `143`. Folioh stops its server group, reaps the launcher and releases the workspace before returning.
 
 **Batch tracing:** Set [`FOLIOH_TRACE`](#folioh_trace) to record a JSONL
 event stream for watch batches. See the environment variables section for

@@ -1,4 +1,4 @@
-//! Example crate for Folioh's Rust documentation support.
+#![doc = include_str!("../README.md")]
 
 /// A greeting message.
 pub struct Greeting {

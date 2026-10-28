@@ -38,6 +38,15 @@ flowchart LR
     Site --> Pipeline["CI/CD publish job"]
 ```
 
+## Navigation
+
+HTTP links use directory URLs such as `/docs/installation/`, including after
+client navigation. The exported HTML retains explicit `index.html` targets for
+links opened directly from the filesystem. Configure the host to serve each
+directory's index file and use the exported `404.html` for missing pages.
+Client-loaded stylesheets and JavaScript chunks keep the deployment base when
+navigation changes the URL depth, including recovery from a missing page.
+
 ## Base Paths
 
 Most hosts serve docs at the root. Use a base path when the generated site is

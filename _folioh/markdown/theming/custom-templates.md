@@ -261,8 +261,11 @@ table to map the symptom to its cause and fix.
 Optional markers (paired feature blocks, the `mdx-components.tsx` markers, and
 markers that only live in optional files such as the landing page or
 `components/theme-configurator.tsx`) do **not** fail the build. When one is
-absent Folioh skips that injection without a message, with one exception: `theme.dark_mode: false` warns
-when `components/theme-provider.tsx` lacks its marker. If a template change did
+absent Folioh skips that injection. Ordinary builds omit skipped-target details,
+with one exception: `theme.dark_mode: false` warns when
+`components/theme-provider.tsx` lacks its marker. `folioh build --verbose` lists
+recorded skipped targets and their reasons, including absent optional files and
+files owned by a theme package. If a template change did
 not take effect and the build still succeeded, compare the file in `.build/`
 with the bundled template: a marker that is still there verbatim, or missing
 from both, was never injected.

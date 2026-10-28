@@ -27,6 +27,17 @@ page shows:
   tables, and JavaScript and Rust re-exports listed as written, without
   resolving what they point at.
 
+Rust trait implementations are titled `impl Trait for Type`. Modules without a
+doc comment have no summary in the overview. Dunder identifiers such as
+`__init__` render literally in API prose; fenced and inline code keep their
+original content. Use `**text**` for strong emphasis.
+
+Block reStructuredText directives in docstrings render as callouts: `note`,
+`warning`, `tip`, `seealso` and `deprecated`. Deprecation versions and body
+content are preserved. Other directive names become labelled notices. Nested
+notices, lists and code remain readable, and the Markdown/full-text reference
+retains each notice label and body.
+
 [Languages](/docs/languages) lists what each reader takes from its source and
 where it stops.
 
